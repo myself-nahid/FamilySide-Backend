@@ -1,16 +1,33 @@
+from typing import Generator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError
+
+from db.session import SessionLocal
 from models.user import User
-from core.security import SECRET_KEY, ALGORITHM
+from core.config import settings
 
 security = HTTPBearer()
+
+def get_db() -> Generator:
+    """
+    Dependency to get a database session.
+    Yields a SQLAlchemy session and safely closes it after the request completes.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security), 
     db: Session = Depends(get_db)
 ) -> User:
+    """
+    Dependency to extract and validate the user from the JWT Token.
+    """
     token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -19,7 +36,7 @@ def get_current_user(
     )
     
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")
         token_type: str = payload.get("type")
         
