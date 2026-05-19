@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Union, Any
 from passlib.context import CryptContext
 from jose import jwt 
-from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, RESET_TOKEN_EXPIRE_MINUTES
+from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -16,12 +16,18 @@ def create_access_token(subject: Union[str, Any], expires_delta: Optional[timede
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        # Using Days from config
+        expire = datetime.utcnow() + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
     
     to_encode = {"exp": expire, "sub": str(subject), "type": "access"}
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
+    # Use settings.SECRET_KEY and settings.ALGORITHM
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def create_password_reset_token(email: str) -> str:
-    expire = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
+    # Using Minutes from config
+    expire = datetime.utcnow() + timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES)
     to_encode = {"exp": expire, "sub": email, "type": "reset"}
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
+    # Use settings.SECRET_KEY and settings.ALGORITHM
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)

@@ -1,16 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from schemas.auth_schema import (
+from app.schemas.auth_schema import (
     SignUpRequest, LoginRequest, ForgotPasswordRequest, 
     ResetPasswordRequest, ChangePasswordRequest, 
     APIResponse, TokenData
 )
-from core.security import (
+from app.core.security import (
     get_password_hash, verify_password, create_access_token, create_password_reset_token
 )
-# Note: get_db yields your database session. get_current_user extracts user from JWT.
-from api.deps import get_db, get_current_user 
-from models.user import User
+from app.api.deps import get_db, get_current_user 
+from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -106,10 +105,10 @@ async def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(
 async def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
     try:
         from jose import jwt
-        from core.security import SECRET_KEY, ALGORITHM
+        from app.core.config import settings  # <-- IMPORT SETTINGS HERE
         
-        # Verify Token
-        payload_data = jwt.decode(payload.token, SECRET_KEY, algorithms=[ALGORITHM])
+        # Verify Token using settings
+        payload_data = jwt.decode(payload.token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email = payload_data.get("sub")
         token_type = payload_data.get("type")
         

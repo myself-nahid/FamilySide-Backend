@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from db.session import engine
-from models import user
-from api.v1.auth import router as auth_router
+from app.db.init_db import init_database
+init_database()
+from app.db.session import engine
+from app.models import user
+from app.api.v1.auth import router as auth_router
 
 user.Base.metadata.create_all(bind=engine)
 
