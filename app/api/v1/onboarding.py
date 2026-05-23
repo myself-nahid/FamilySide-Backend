@@ -5,10 +5,10 @@ import os
 import shutil
 
 from app.api.deps import get_db, get_current_user
-from app.models.user import User, Child, Interest
+from app.models.user import SocialLink, User, Child, Interest
 from app.schemas.auth_schema import APIResponse
 from app.schemas.onboarding_schema import (
-    RoleUpdateRequest, ChildrenSetupRequest, 
+    BusinessSetupRequest, RoleUpdateRequest, ChildrenSetupRequest, 
     LocationUpdateRequest, InterestsUpdateRequest
 )
 
@@ -116,3 +116,34 @@ async def upload_profile_image(
     db.commit()
     
     return APIResponse(status="success", message="Profile image uploaded and onboarding complete!")
+
+@router.post("/business/social-links", response_model=APIResponse[None])
+async def setup_business_links(
+    payload: BusinessSetupRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Matches Image 3: "Help us to connect more about your business"
+    """
+    # 1. First, make sure we mark this user as a provider
+    if current_user.user_type != "provider":
+        current_user.user_type = "provider"
+    
+    # 2. Clear existing links to handle updates/edits cleanly
+    db.query(SocialLink).filter(SocialLink.user_id == current_user.id).delete()
+    
+    # 3. Add all new links from the payload
+    for link_data in payload.links:
+        new_link = SocialLink(
+            user_id=current_user.id,
+            platform=link_data.platform.lower(),
+            url=link_data.url
+        )
+        db.add(new_link)
+        
+    # Mark onboarding as complete for providers after this step
+    current_user.onboarding_completed = True
+    db.commit()
+    
+    return APIResponse(status="success", message="Business profile links saved successfully")

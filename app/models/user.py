@@ -19,12 +19,17 @@ class User(Base):
     hashed_password = Column(String, nullable=True)
     auth_provider = Column(String, default="local")
     
-    # Onboarding Fields
-    role = Column(String, nullable=True) # Mother, Father, Relative
+    # --- NEW: Distinguish between regular user and service provider ---
+    user_type = Column(String, default="family") # "family" or "provider"
+    
+    # Shared Onboarding Fields
     location_name = Column(String, nullable=True)
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     profile_image_url = Column(String, nullable=True)
+    
+    # Family Specific
+    role = Column(String, nullable=True) # Mother, Father, Relative
     
     is_active = Column(Boolean, default=True)
     onboarding_completed = Column(Boolean, default=False)
@@ -32,6 +37,20 @@ class User(Base):
     # Relationships
     children = relationship("Child", back_populates="parent", cascade="all, delete-orphan")
     interests = relationship("Interest", secondary=user_interests, back_populates="users")
+    
+    # --- NEW: Provider Specific Relationship ---
+    social_links = relationship("SocialLink", back_populates="user", cascade="all, delete-orphan")
+
+
+class SocialLink(Base):
+    __tablename__ = 'social_links'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"))
+    platform = Column(String, nullable=False) # e.g., 'website', 'facebook', 'instagram'
+    url = Column(String, nullable=False)
+    
+    user = relationship("User", back_populates="social_links")
 
 
 class Child(Base):
@@ -41,12 +60,9 @@ class Child(Base):
     parent_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"))
     is_expecting = Column(Boolean, default=False)
     
-    # If Kids
     name = Column(String, nullable=True)
     dob = Column(Date, nullable=True)
-    gender = Column(String, nullable=True) # boy, girl, other
-    
-    # If Expecting
+    gender = Column(String, nullable=True)
     expected_due_date = Column(Date, nullable=True)
 
     parent = relationship("User", back_populates="children")
@@ -56,6 +72,6 @@ class Interest(Base):
     __tablename__ = 'interests'
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False) # e.g., Education, Music, Sports
+    name = Column(String, unique=True, nullable=False)
 
     users = relationship("User", secondary=user_interests, back_populates="interests")

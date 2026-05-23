@@ -28,3 +28,10 @@ class LocationUpdateRequest(BaseModel):
     location_name: str
     lat: Optional[float] = None
     lng: Optional[float] = None
+
+class SocialLinkItem(BaseModel):
+    platform: str = Field(..., example="facebook")
+    url: str = Field(..., example="https://facebook.com/mybusiness")
+
+class BusinessSetupRequest(BaseModel):
+    links: List[SocialLinkItem]
