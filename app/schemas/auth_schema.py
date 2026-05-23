@@ -1,36 +1,64 @@
-from pydantic import BaseModel, EmailStr, Field
+# --- START OF FILE app/schemas/auth_schema.py ---
+
+from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Generic, TypeVar
 
 T = TypeVar("T")
 
-# Standard API Response Wrapper
 class APIResponse(BaseModel, Generic[T]):
     status: str
     message: str
     data: Optional[T] = None
 
-# Request Schemas
+# Add max_length=72 to all password fields
+
 class SignUpRequest(BaseModel):
     name: str = Field(..., min_length=2, example="John Doe")
     email: EmailStr
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=6, max_length=72)
+
+    @validator("password")
+    def password_max_72_bytes(cls, v):
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password cannot exceed 72 bytes in UTF-8 encoding.")
+        return v
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., max_length=72)
+
+    @validator("password")
+    def password_max_72_bytes(cls, v):
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password cannot exceed 72 bytes in UTF-8 encoding.")
+        return v
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
+
 class ResetPasswordRequest(BaseModel):
     token: str 
-    new_password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=6, max_length=72)
+
+    @validator("new_password")
+    def password_max_72_bytes(cls, v):
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password cannot exceed 72 bytes in UTF-8 encoding.")
+        return v
+
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(..., min_length=6)
+    current_password: str = Field(..., max_length=72)
+    new_password: str = Field(..., min_length=6, max_length=72)
 
-# Response Data Schemas
+    @validator("current_password", "new_password")
+    def password_max_72_bytes(cls, v):
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password cannot exceed 72 bytes in UTF-8 encoding.")
+        return v
+
 class TokenData(BaseModel):
     access_token: str
     token_type: str = "bearer"
