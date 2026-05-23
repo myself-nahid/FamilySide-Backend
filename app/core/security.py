@@ -32,6 +32,12 @@ def create_access_token(subject: Union[str, Any], expires_delta: Optional[timede
     to_encode = {"exp": expire, "sub": str(subject), "type": "access"}
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
+def create_refresh_token(subject: Union[str, Any]) -> str:
+    # Refresh tokens usually last much longer (e.g., 30 days)
+    expire = datetime.utcnow() + timedelta(days=30)
+    to_encode = {"exp": expire, "sub": str(subject), "type": "refresh"}
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
 def create_password_reset_token(email: str) -> str:
     expire = datetime.utcnow() + timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES)
     to_encode = {"exp": expire, "sub": email, "type": "reset"}

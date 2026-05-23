@@ -1,5 +1,3 @@
-# --- START OF FILE app/schemas/auth_schema.py ---
-
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Generic, TypeVar
 
@@ -10,7 +8,6 @@ class APIResponse(BaseModel, Generic[T]):
     message: str
     data: Optional[T] = None
 
-# Add max_length=72 to all password fields
 
 class SignUpRequest(BaseModel):
     name: str = Field(..., min_length=2, example="John Doe")
@@ -61,7 +58,11 @@ class ChangePasswordRequest(BaseModel):
 
 class TokenData(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     user_id: int
     name: str
     email: str
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str

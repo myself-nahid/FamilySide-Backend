@@ -1,17 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.schemas.auth_schema import (
-    SignUpRequest, LoginRequest, ForgotPasswordRequest, 
+    RefreshTokenRequest, SignUpRequest, LoginRequest, ForgotPasswordRequest, 
     ResetPasswordRequest, ChangePasswordRequest, 
     APIResponse, TokenData
 )
 from app.core.security import (
-    get_password_hash, verify_password, create_access_token, create_password_reset_token
+    get_password_hash, verify_password, create_access_token, create_refresh_token, create_password_reset_token
 )
 from app.api.deps import get_db, get_current_user 
 from app.models.user import OTPVerification, User
 from pydantic import BaseModel
 import random
+from app.core.config import settings
+from jose import jwt
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -37,14 +39,15 @@ async def signup(payload: SignUpRequest, db: Session = Depends(get_db)):
     db.refresh(new_user)
     
     # 3. Generate Token
-    access_token = create_access_token(subject=new_user.id)
-    
+    # access_token = create_access_token(subject=new_user.id)
+    # refresh_token = create_refresh_token(subject=new_user.id)
     return APIResponse(
         status="success",
         message="Account created successfully",
         data=TokenData(
-            access_token=access_token,
-            user_id=new_user.id,
+            # access_token=access_token,
+            # refresh_token=refresh_token,
+            # user_id=new_user.id,
             name=new_user.full_name,
             email=new_user.email
         )
@@ -69,18 +72,41 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)):
     
     # 3. Generate Token
     access_token = create_access_token(subject=user.id)
-    
+    refresh_token = create_refresh_token(subject=user.id)
     return APIResponse(
         status="success",
         message="Login successful",
         data=TokenData(
             access_token=access_token,
-            user_id=user.id,
+            refresh_token=refresh_token,
+            # user_id=user.id,
             name=user.full_name,
             email=user.email
         )
     )
 
+@router.post("/refresh", response_model=APIResponse[dict])
+async def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
+    try:
+        # Decode and verify the refresh token
+        payload_data = jwt.decode(payload.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = payload_data.get("sub")
+        token_type = payload_data.get("type")
+        
+        if user_id is None or token_type != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+            
+        # Generate a NEW access token
+        new_access_token = create_access_token(subject=user_id)
+        
+        return APIResponse(
+            status="success",
+            message="Token refreshed",
+            data={"access_token": new_access_token}
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Refresh token expired or invalid")
+    
 @router.post("/admin/login", response_model=APIResponse[TokenData])
 async def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
     # 1. Find User
@@ -100,13 +126,15 @@ async def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
     
     # 4. Generate Token
     access_token = create_access_token(subject=user.id)
+    refresh_token = create_refresh_token(subject=user.id)
     
     return APIResponse(
         status="success",
         message="Admin login successful",
         data=TokenData(
             access_token=access_token,
-            user_id=user.id,
+            refresh_token=refresh_token,
+            # user_id=user.id,
             name=user.full_name,
             email=user.email
         )
