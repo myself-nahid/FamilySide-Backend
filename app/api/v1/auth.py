@@ -9,7 +9,9 @@ from app.core.security import (
     get_password_hash, verify_password, create_access_token, create_password_reset_token
 )
 from app.api.deps import get_db, get_current_user 
-from app.models.user import User
+from app.models.user import OTPVerification, User
+from pydantic import BaseModel
+import random
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -71,6 +73,37 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return APIResponse(
         status="success",
         message="Login successful",
+        data=TokenData(
+            access_token=access_token,
+            user_id=user.id,
+            name=user.full_name,
+            email=user.email
+        )
+    )
+
+@router.post("/admin/login", response_model=APIResponse[TokenData])
+async def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
+    # 1. Find User
+    user = db.query(User).filter(User.email == payload.email).first()
+    
+    # 2. Check existence AND admin status
+    # This prevents the 500 error by handling the 'None' case gracefully
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        
+    if not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Admins only.")
+    
+    # 3. Verify Password
+    if not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+    
+    # 4. Generate Token
+    access_token = create_access_token(subject=user.id)
+    
+    return APIResponse(
+        status="success",
+        message="Admin login successful",
         data=TokenData(
             access_token=access_token,
             user_id=user.id,
@@ -165,3 +198,21 @@ async def change_password(
         status="success",
         message="Password changed successfully."
     )
+
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp: str
+
+@router.post("/verify-otp")
+async def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
+    # 1. Query OTP table for this email and code
+    record = db.query(OTPVerification).filter(
+        OTPVerification.email == payload.email,
+        OTPVerification.otp_code == payload.otp
+    ).first()
+    
+    if not record:
+        raise HTTPException(status_code=400, detail="Invalid code")
+    
+    # 2. Return success, frontend then navigates to "Reset Password" screen
+    return {"status": "success", "message": "Code verified"}

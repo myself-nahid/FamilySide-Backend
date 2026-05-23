@@ -18,6 +18,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=True)
     auth_provider = Column(String, default="local")
+    is_admin = Column(Boolean, default=False) # Only True for admin accounts
     
     # --- NEW: Distinguish between regular user and service provider ---
     user_type = Column(String, default="family") # "family" or "provider"
@@ -40,6 +41,13 @@ class User(Base):
     
     # --- NEW: Provider Specific Relationship ---
     social_links = relationship("SocialLink", back_populates="user", cascade="all, delete-orphan")
+
+class OTPVerification(Base):
+    __tablename__ = "otp_codes"
+    id = Column(Integer, primary_key=True)
+    email = Column(String, index=True)
+    otp_code = Column(String)
+    expires_at = Column(Date) # Or DateTime
 
 
 class SocialLink(Base):
