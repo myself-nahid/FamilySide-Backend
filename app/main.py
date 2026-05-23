@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.db.init_db import init_database
-init_database()
+from app.db.init_db import init_database, sync_database_schema
+init_database(), 
 from app.db.session import engine
 from app.models import user
 from app.api.v1.auth import router as auth_router
+from app.api.v1.onboarding import router as onboarding_router
 
 user.Base.metadata.create_all(bind=engine)
+sync_database_schema(engine)
 
 app = FastAPI(
     title="FamilySide App API",
@@ -23,7 +25,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api/v1")
-
+app.include_router(onboarding_router, prefix="/api/v1")
 @app.get("/", tags=["Health Check"])
 async def root():
     return {
