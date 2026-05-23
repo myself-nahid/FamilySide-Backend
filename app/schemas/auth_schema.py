@@ -1,3 +1,5 @@
+from enum import Enum
+
 from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, Generic, TypeVar
 
@@ -8,11 +10,16 @@ class APIResponse(BaseModel, Generic[T]):
     message: str
     data: Optional[T] = None
 
+class UserType(str, Enum):
+    family = "family"
+    provider = "provider"
+
 
 class SignUpRequest(BaseModel):
     name: str = Field(..., min_length=2, example="John Doe")
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=72)
+    user_type: UserType = Field(..., example="family")
 
     @validator("password")
     def password_max_72_bytes(cls, v):

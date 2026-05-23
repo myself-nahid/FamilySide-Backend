@@ -32,6 +32,7 @@ async def signup(payload: SignUpRequest, db: Session = Depends(get_db)):
         full_name=payload.name,
         email=payload.email,
         hashed_password=get_password_hash(payload.password),
+        user_type=payload.user_type,
         auth_provider="local"
     )
     db.add(new_user)
@@ -244,3 +245,15 @@ async def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
     
     # 2. Return success, frontend then navigates to "Reset Password" screen
     return {"status": "success", "message": "Code verified"}
+
+@router.patch("/account/upgrade-to-provider")
+async def upgrade_to_provider(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.user_type == "provider":
+        raise HTTPException(status_code=400, detail="Already a provider")
+    
+    current_user.user_type = "provider"
+    db.commit()
+    return {"message": "Account upgraded successfully"}

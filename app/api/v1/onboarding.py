@@ -147,3 +147,11 @@ async def setup_business_links(
     db.commit()
     
     return APIResponse(status="success", message="Business profile links saved successfully")
+
+# Example of using user_type to control logic
+@router.get("/onboarding/status")
+async def get_onboarding_status(current_user: User = Depends(get_current_user)):
+    if current_user.user_type == "family":
+        return {"next_step": "set_child_details"}
+    else:
+        return {"next_step": "set_business_links"}
