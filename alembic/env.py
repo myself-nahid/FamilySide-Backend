@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # 2. Import your settings and your Base model
 from app.core.config import settings
 from app.models.user import Base # Make sure this imports all your models!
+from app.models import user, core_data
 
 config = context.config
 

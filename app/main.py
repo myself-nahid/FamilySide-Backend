@@ -7,40 +7,41 @@ from alembic import command
 from app.db.init_db import init_database
 from app.api.v1.auth import router as auth_router
 from app.api.v1.onboarding import router as onboarding_router
+from app.api.v1.admin import router as admin_router
 
 # Define the lifespan of the application
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # 1. Startup Logic
-    print("Initializing Database...")
-    init_database()
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     # 1. Startup Logic
+#     print("Initializing Database...")
+#     init_database()
     
-    print("Checking for database updates via Alembic...")
-    alembic_cfg = Config("alembic.ini")
-    command.upgrade(alembic_cfg, "head")
-    print("Database is up to date!")
+#     print("Checking for database updates via Alembic...")
+#     alembic_cfg = Config("alembic.ini")
+#     command.upgrade(alembic_cfg, "head")
+#     print("Database is up to date!")
     
-    yield  # Application is now running
+#     yield  # Application is now running
     
-    # 2. Shutdown Logic (if any)
-    print("Shutting down...")
+#     # 2. Shutdown Logic (if any)
+#     print("Shutting down...")
 
 # Initialize FastAPI with the lifespan
 app = FastAPI(
     title="FamilySide App API",
     description="Backend API for the FamilySide Mobile Application",
     version="1.0.0",
-    lifespan=lifespan
+    # lifespan=lifespan
 )
 
 # Middleware to log every request
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    response = await call_next(request)
+# @app.middleware("http")
+# async def log_requests(request: Request, call_next):
+#     response = await call_next(request)
 
-    print(f"[REQUEST] {request.method} {request.url.path} - Status: {response.status_code}")
+#     print(f"[REQUEST] {request.method} {request.url.path} - Status: {response.status_code}")
 
-    return response
+#     return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,6 +53,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(onboarding_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
 
 @app.get("/", tags=["Health Check"])
 async def root():

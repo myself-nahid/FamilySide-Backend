@@ -1,3 +1,5 @@
+import datetime
+from sqlalchemy.sql import func
 from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey, Float, Table
 from sqlalchemy.orm import relationship
 from app.db.session import Base
@@ -20,8 +22,13 @@ class User(Base):
     auth_provider = Column(String, default="local")
     is_admin = Column(Boolean, default=False) # Only True for admin accounts
     
-    # --- NEW: Distinguish between regular user and service provider ---
+    # Distinguish between regular user and service provider 
     user_type = Column(String, default="family") # "family" or "provider"
+
+    phone_number = Column(String, nullable=True)
+    subscription_plan = Column(String, default="Free") # Free, Premium, Smart
+    status = Column(String, default="Active") # Active, Suspended, Blocked
+    join_date = Column(Date, default=func.now())
     
     # Shared Onboarding Fields
     location_name = Column(String, nullable=True)
@@ -39,7 +46,7 @@ class User(Base):
     children = relationship("Child", back_populates="parent", cascade="all, delete-orphan")
     interests = relationship("Interest", secondary=user_interests, back_populates="users")
     
-    # --- NEW: Provider Specific Relationship ---
+    # Provider Specific Relationship 
     social_links = relationship("SocialLink", back_populates="user", cascade="all, delete-orphan")
 
 class OTPVerification(Base):
