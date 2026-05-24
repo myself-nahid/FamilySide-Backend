@@ -121,3 +121,39 @@ class UserDetailResponse(BaseModel):
     
     # Nested Children List (Image 1)
     children: List[ChildResponse]
+
+class NotificationItem(BaseModel):
+    id: int
+    title: str
+    subtitle: str
+    item_type: str
+    item_id: int
+    is_read: bool
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class ItemReviewDetailResponse(BaseModel):
+    id: int
+    item_type: str
+    name: str
+    creator_email: Optional[str] = "abc@gmail.com"
+    category: str
+    sub_categories: Optional[List[str]] = []
+    tags: List[str] = []
+    
+    # Specific fields
+    price: float
+    description: Optional[str] = None
+    website: Optional[str] = None
+    instagram_link: Optional[str] = None
+    whatsapp_number: Optional[str] = None
+    
+    # Event specific
+    date: Optional[str] = None
+    time: Optional[str] = None
+    
+    # Activity specific
+    opening_days: Optional[str] = "10:00 AM to 09:00 PM"
+    opening_hours: Optional[str] = "10:00 AM to 09:00 PM"

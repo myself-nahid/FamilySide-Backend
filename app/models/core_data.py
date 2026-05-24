@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text
+from sqlalchemy import Column, DateTime, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -48,3 +48,17 @@ class PlatformItem(Base):
 
     creator = relationship("User", backref="created_items")
     category = relationship("Category")
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False) # e.g., "New Event Added"
+    subtitle = Column(String, nullable=False) # e.g., "John Doe want to Join"
+    
+    # Polymorphic links
+    item_type = Column(String, nullable=False) # 'activity', 'event', 'gift'
+    item_id = Column(Integer, nullable=False) # Linked item's ID
+    
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())

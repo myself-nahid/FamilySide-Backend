@@ -16,8 +16,9 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse
 )
+from app.models.core_data import Notification
 from app.core.security import get_password_hash, verify_password
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
@@ -498,48 +499,154 @@ async def update_user_status_action(
         
     db.commit()
     return APIResponse(status="success", message=f"User account status has been updated to {user.status}")
+    
+
+"""
+3. NOTIFICATIONS
+This section covers all notification-related endpoints, including fetching paginated notifications, viewing detailed item modals, and approving/rejecting items directly from notifications.
+"""
+
+# 3.1 GET PAGINATED NOTIFICATIONS
+@router.get("/notifications", response_model=APIResponse[dict])
+async def get_notifications_paginated(
+    page: int = 1,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Returns a paginated list of all administrative notifications,
+    ordered by the newest notifications first.
+    """
+    query = db.query(Notification)
+    total_count = query.count()
+    offset = (page - 1) * limit
+    
+    notifications = query.order_by(Notification.created_at.desc()).offset(offset).limit(limit).all()
+    
+    # Format dates into friendly UI formats (e.g. "Tuesday 2:00 PM")
+    formatted_list = []
+    for n in notifications:
+        formatted_list.append({
+            "id": n.id,
+            "title": n.title,
+            "subtitle": n.subtitle,
+            "item_type": n.item_type,
+            "item_id": n.item_id,
+            "is_read": n.is_read,
+            "time_label": n.created_at.strftime("%A %I:%M %p") if n.created_at else "Today"
+        })
+        
+    pagination_data = {
+        "total": total_count,
+        "page": page,
+        "limit": limit,
+        "notifications": formatted_list
+    }
+    
+    return APIResponse(status="success", message="Notifications fetched", data=pagination_data)
 
 
-# 3. CONTENT APPROVALS & REJECTIONS 
-@router.get("/items/pending")
-async def get_pending_items(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    """Matches the Notifications / To-Do Today approval queue"""
-    items = db.query(PlatformItem).filter(PlatformItem.status == "pending").all()
-    return {"status": "success", "data": items}
+# 3.2 VIEW DETAILED ITEM MODAL
+@router.get("/notifications/{notification_id}/view", response_model=APIResponse[ItemReviewDetailResponse])
+async def view_notification_item_detail(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Resolves a notification and returns the exact detailed structural layout 
+    of the linked Item (Activity, Event, or Gift) to populate review modals.
+    """
+    notification = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+        
+    item = db.query(PlatformItem).filter(PlatformItem.id == notification.item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Associated item no longer exists")
+        
+    # Mark notification as read
+    notification.is_read = True
+    db.commit()
+    
+    # Gather tags & categories safely
+    tags = ["Indoor", "Ongoing", "Free"] # Default mock tags for UI display
+    sub_categories = ["Doctors", "Nurseries", "Playgrounds"] # Mock sub-categories
+    
+    # Map the object dynamically based on what type of item it is
+    detail = ItemReviewDetailResponse(
+        id=item.id,
+        item_type=item.item_type,
+        name=item.name,
+        creator_email=item.creator.email if item.creator else "abc@gmail.com",
+        category=item.category.name if item.category else "Uncategorized",
+        sub_categories=sub_categories,
+        tags=tags,
+        price=item.price,
+        description=item.description,
+        website=item.website,
+        instagram_link=item.instagram,
+        whatsapp_number=item.whatsapp,
+        date=item.date.strftime("%d/%m/%Y") if item.date else None,
+        time=item.start_time.strftime("%I:%M %p") if item.start_time else None
+    )
+    
+    return APIResponse(status="success", message="Item details fetched successfully", data=detail)
 
-@router.patch("/items/{item_id}/status")
-async def update_item_status(item_id: int, payload: ItemStatusUpdateRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    """Matches the 'Approve', 'Reject', and 'Block' buttons on item modals"""
-    item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
+
+# 3.3 APPROVE ITEM
+@router.post("/notifications/{notification_id}/approve", response_model=APIResponse[None])
+async def approve_notification_item(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    notification = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+        
+    item = db.query(PlatformItem).filter(PlatformItem.id == notification.item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
         
-    item.status = payload.status # e.g., 'approved', 'rejected', 'blocked'
+    # Approve Item
+    item.status = "approved"
+    
+    # Remove from notifications list as action is complete
+    db.delete(notification)
     db.commit()
-    return {"status": "success", "message": f"Item {item.name} marked as {item.status}"}
+    
+    return APIResponse(status="success", message=f"{item.item_type.capitalize()} has been approved and is now live!")
 
-# 4. CREATE CONTENT
-@router.post("/items/create")
-async def admin_create_item(payload: CreateItemRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    new_item = PlatformItem(
-        item_type=payload.item_type,
-        name=payload.name,
-        category_id=payload.category_id,
-        location=payload.location,
-        price=payload.price,
-        description=payload.description,
-        date=payload.date,
-        start_time=payload.start_time,
-        end_time=payload.end_time,
-        website=payload.website,
-        whatsapp=payload.whatsapp,
-        instagram=payload.instagram,
-        creator_id=admin.id,
-        status="approved" # Admin creations are auto-approved
-    )
-    db.add(new_item)
+
+# 3.4 REJECT ITEM (Matches Images 5 & 9 Reject flow)
+@router.post("/notifications/{notification_id}/reject", response_model=APIResponse[None])
+async def reject_notification_item(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Rejects the item, changing its database status to 'rejected'
+    and clearing it out of the active notifications table.
+    """
+    notification = db.query(Notification).filter(Notification.id == notification_id).first()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+        
+    item = db.query(PlatformItem).filter(PlatformItem.id == notification.item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+        
+    # Reject Item
+    item.status = "rejected"
+    
+    # Remove from notifications list as action is complete
+    db.delete(notification)
     db.commit()
-    return {"status": "success", "message": f"{payload.item_type.capitalize()} created successfully"}
+    
+    return APIResponse(status="success", message=f"{item.item_type.capitalize()} has been rejected successfully.")
 
 # 5. ADMIN SETTINGS
 @router.patch("/settings/profile")
