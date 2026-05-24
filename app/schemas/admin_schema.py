@@ -96,3 +96,28 @@ class ChartDataResponse(BaseModel):
     tab: str
     timeframe: str
     points: List[ChartDataPoint]
+
+class ChildResponse(BaseModel):
+    id: int
+    name: str
+    dob: str
+    gender: str
+
+class UserDetailResponse(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    role: Optional[str] = "Parent"
+    join_date: str
+    location_name: Optional[str] = None
+    status: str
+    subscription_plan: str
+    
+    # Metrics seen on the Review Modal (Image 1)
+    reviews_count: int
+    activities_count: int
+    saved_items_count: int
+    contributor_level: str  # e.g., "Top 9%"
+    
+    # Nested Children List (Image 1)
+    children: List[ChildResponse]
