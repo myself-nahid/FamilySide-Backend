@@ -1,3 +1,4 @@
+from alembic.environment import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -44,7 +45,11 @@ def calculate_trend(db: Session, query_base, date_field) -> TrendMetric:
         is_increase=percentage_change >= 0
     )
 
-# 1. Dashboard Overview
+"""
+1. DASHBOARD OVERVIEW (Top Cards + Trends + Donut Chart + Bottom Lists)
+"""
+
+# 1.1 Dashboard Overview (Top Cards + Donut Chart + Bottom Lists)
 @router.get("/dashboard/overview", response_model=APIResponse[DashboardOverviewResponse])
 async def get_dashboard_overview(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     """
@@ -138,7 +143,7 @@ async def get_dashboard_overview(db: Session = Depends(get_db), admin: User = De
     return APIResponse(status="success", message="Dashboard overview successfully loaded", data=response_data)
 
 
-# INTERACTIVE LINE CHART FILTERING API (Activity Overview)
+# 1.2 INTERACTIVE LINE CHART FILTERING API (Activity Overview) (Trends)
 @router.get("/dashboard/chart", response_model=APIResponse[ChartDataResponse])
 async def get_dashboard_chart(
     tab: str = "activity",        # activity, events, users, reviews
@@ -211,6 +216,136 @@ async def get_dashboard_chart(
         message="Chart data loaded", 
         data=ChartDataResponse(tab=tab, timeframe=timeframe, points=points)
     )
+
+
+# 1.3 VIEW ALL FLAGGED ITEMS (Matches "Recent flagged items -> View all")
+@router.get("/items/flagged", response_model=APIResponse[dict])
+async def get_all_flagged_items(
+    page: int = 1,
+    limit: int = 10,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Returns a paginated, searchable list of all flagged items on the platform.
+    """
+    query = db.query(PlatformItem).filter(PlatformItem.status == "flagged")
+    
+    # Enable searching by item name if search query is provided
+    if search:
+        query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
+        
+    total_count = query.count()
+    
+    # Paginate using offset and limit
+    offset = (page - 1) * limit
+    items = query.order_by(PlatformItem.created_at.desc()).offset(offset).limit(limit).all()
+    
+    pagination_data = {
+        "total": total_count,
+        "page": page,
+        "limit": limit,
+        "items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "item_type": item.item_type.capitalize(),
+                "created_at": item.created_at.strftime("%Y-%m-%d") if item.created_at else None,
+                "location": item.location
+            } for item in items
+        ]
+    }
+    
+    return APIResponse(status="success", message="Flagged items fetched", data=pagination_data)
+
+
+# 1.4 VIEW ALL PENDING APPROVALS (Matches "To do today -> View all")
+@router.get("/items/pending/all", response_model=APIResponse[dict])
+async def get_all_pending_approvals(
+    page: int = 1,
+    limit: int = 10,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Returns a paginated, searchable list of all pending approvals on the platform.
+    """
+    query = db.query(PlatformItem).filter(PlatformItem.status == "pending")
+    
+    if search:
+        query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
+        
+    total_count = query.count()
+    offset = (page - 1) * limit
+    items = query.order_by(PlatformItem.created_at.desc()).offset(offset).limit(limit).all()
+    
+    pagination_data = {
+        "total": total_count,
+        "page": page,
+        "limit": limit,
+        "items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "item_type": item.item_type.capitalize(),
+                "created_at": item.created_at.strftime("%Y-%m-%d") if item.created_at else None,
+                "location": item.location
+            } for item in items
+        ]
+    }
+    
+    return APIResponse(status="success", message="Pending approvals fetched", data=pagination_data)
+
+
+# 1.5 VIEW ALL UPCOMING EVENTS (Matches "Upcoming Events -> View all")
+@router.get("/items/upcoming/all", response_model=APIResponse[dict])
+async def get_all_upcoming_events_paginated(
+    page: int = 1,
+    limit: int = 10,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Returns a paginated, searchable list of all approved upcoming events,
+    sorted by date ascending (closest events first).
+    """
+    now = datetime.utcnow()
+    query = db.query(PlatformItem).filter(
+        and_(
+            PlatformItem.item_type == "event",
+            PlatformItem.status == "approved",
+            PlatformItem.date >= now.date()
+        )
+    )
+    
+    if search:
+        query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
+        
+    total_count = query.count()
+    offset = (page - 1) * limit
+    items = query.order_by(PlatformItem.date.asc()).offset(offset).limit(limit).all()
+    
+    pagination_data = {
+        "total": total_count,
+        "page": page,
+        "limit": limit,
+        "items": [
+            {
+                "id": event.id,
+                "name": event.name,
+                "date": event.date.strftime("%d %b %Y") if event.date else "N/A",
+                "time": event.start_time.strftime("%I:%M %p") if event.start_time else "N/A",
+                "location": event.location,
+                "price": event.price
+            } for event in items
+        ]
+    }
+    
+    return APIResponse(status="success", message="Upcoming events fetched", data=pagination_data)
+
 
 # 2. USER MANAGEMENT 
 @router.get("/users")
