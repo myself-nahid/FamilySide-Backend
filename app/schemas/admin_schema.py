@@ -219,3 +219,31 @@ class EventDetailResponse(BaseModel):
     time: Optional[str] = None
     
     tags: List[str] = []
+
+class GiftListItem(BaseModel):
+    id: int
+    name: str
+    created_by: str   
+    category: str
+    location: str
+    fee: float
+
+class GiftDetailResponse(BaseModel):
+    id: int
+    name: str
+    image_url: Optional[str] = None
+    description: Optional[str] = None
+    website: Optional[str] = None
+    location: Optional[str] = None
+    created_by: str
+    status: str
+    date_added: str
+    whatsapp: Optional[str] = None
+    
+    # Gift Specifics
+    date: Optional[str] = None
+    time: Optional[str] = None
+    tags: List[str] = []
+    
+    # Mock 'Includes' array for the UI design in Image 3
+    includes: List[str] = []

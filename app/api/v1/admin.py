@@ -19,7 +19,7 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse
 )
 from app.models.core_data import Notification
 from app.core.security import get_password_hash, verify_password
@@ -1102,6 +1102,203 @@ async def block_event(event_id: int, db: Session = Depends(get_db), admin: User 
     event.status = "blocked"
     db.commit()
     return APIResponse(status="success", message="Event blocked successfully")
+
+"""6. GIFT MANAGEMENT
+This section includes all endpoints related to managing gifts, including listing gifts with pagination, search, and creator type filtering, viewing detailed gift modals, creating new gifts with form-data and file upload, and deleting gifts. These endpoints are designed to support the full lifecycle of gift management from the admin dashboard."""
+
+# 6.1 GET ALL GIFTS (Paginated + Searchable + Filter by Creator Type)
+@router.get("/gifts", response_model=APIResponse[dict])
+async def get_gifts_paginated(
+    page: int = 1,
+    limit: int = 10,
+    search: Optional[str] = None,
+    creator_type: Optional[str] = "all", # Filter by "Admin", "User", "Provider"
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    query = db.query(PlatformItem).filter(PlatformItem.item_type == "gift")
+    
+    if search:
+        query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
+        
+    if creator_type and creator_type != "all":
+        query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
+
+    total_count = query.count()
+    offset = (page - 1) * limit
+    gifts = query.order_by(PlatformItem.created_at.desc()).offset(offset).limit(limit).all()
+    
+    gift_list = []
+    for gift in gifts:
+        creator_label = "Admin"
+        if gift.creator:
+            creator_label = gift.creator.user_type.capitalize() if gift.creator.user_type else "User"
+            
+        gift_list.append(GiftListItem(
+            id=gift.id,
+            name=gift.name,
+            created_by=creator_label,
+            category=gift.category.name if gift.category else "Uncategorized",
+            location=gift.location or "N/A",
+            fee=gift.price or 0.0
+        ))
+        
+    return APIResponse(
+        status="success", 
+        message="Gifts fetched", 
+        data={"total": total_count, "page": page, "limit": limit, "items": gift_list}
+    )
+
+
+# 6.2 VIEW GIFT DETAILS 
+@router.get("/gifts/{gift_id}", response_model=APIResponse[GiftDetailResponse])
+async def get_gift_detail(
+    gift_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    gift = db.query(PlatformItem).filter(
+        PlatformItem.id == gift_id, 
+        PlatformItem.item_type == "gift"
+    ).first()
+    
+    if not gift:
+        raise HTTPException(status_code=404, detail="Gift not found")
+        
+    creator_label = "Admin"
+    if gift.creator:
+        creator_label = gift.creator.user_type.capitalize() if gift.creator.user_type else "User"
+
+    # Combine start and end time into one string if time exists
+    time_str = "N/A"
+    if gift.start_time:
+        time_str = gift.start_time.strftime("%I:%M %p")
+
+    tags = gift.tags if isinstance(gift.tags, list) else []
+    
+    # Mock data to support the specific "Includes" section in Image 3
+    mock_includes = ["1 class", "Materials for the message", "Duration: 2 Hours"]
+
+    detail = GiftDetailResponse(
+        id=gift.id,
+        name=gift.name,
+        image_url=gift.image_url,
+        description=gift.description,
+        website=gift.website or "www.familyside.com",
+        location=gift.location,
+        created_by=creator_label,
+        status=gift.status.capitalize(),
+        date_added=gift.created_at.strftime("%d %b %Y") if gift.created_at else "N/A",
+        whatsapp=gift.whatsapp,
+        date=gift.date.strftime("%d %b %Y") if gift.date else "N/A",
+        time=time_str,
+        tags=tags,
+        includes=mock_includes
+    )
+    
+    return APIResponse(status="success", message="Gift details fetched", data=detail)
+
+
+# 6.3 CREATE GIFT
+@router.post("/gifts", response_model=APIResponse[None])
+async def create_gift(
+    name: str = Form(...),
+    location: str = Form(...),
+    category_id: int = Form(...),
+    price: float = Form(0.0),
+    description: str = Form(...),
+    
+    website: Optional[str] = Form(None), # Website isn't in form UI but modal needs it
+    whatsapp: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    instagram: Optional[str] = Form(None),
+    
+    date: Optional[str] = Form(None),    # Format: "dd/mm/yyyy"
+    
+    sub_categories: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    # 1. Handle File Upload
+    saved_image_path = None
+    if photo:
+        UPLOAD_DIR = "uploads/gifts"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        file_extension = photo.filename.split(".")[-1]
+        file_path = os.path.join(UPLOAD_DIR, f"gift_{datetime.utcnow().timestamp()}.{file_extension}")
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        saved_image_path = f"/{file_path}"
+
+    # 2. Parse JSON lists (Sub-categories and Tags)
+    import json
+    parsed_sub = []
+    parsed_tags = []
+    if sub_categories:
+        try: parsed_sub = json.loads(sub_categories)
+        except: parsed_sub = [sub_categories]
+    if tags:
+        try: parsed_tags = json.loads(tags)
+        except: parsed_tags = [tags]
+
+    # 3. Parse Date Safely
+    parsed_date = None
+    if date:
+        try: parsed_date = datetime.strptime(date, "%d/%m/%Y").date()
+        except: 
+            try: parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+            except: pass
+
+    # 4. Save to Database
+    new_gift = PlatformItem(
+        item_type="gift",
+        name=name,
+        location=location,
+        category_id=category_id,
+        price=price,
+        description=description,
+        website=website,
+        whatsapp=whatsapp,
+        email=email,
+        instagram=instagram,
+        date=parsed_date,
+        sub_categories=parsed_sub,
+        tags=parsed_tags,
+        image_url=saved_image_path,
+        creator_id=admin.id,
+        status="approved" # Auto-approved
+    )
+    
+    db.add(new_gift)
+    db.commit()
+    
+    return APIResponse(status="success", message="Gift created successfully!")
+
+# 6.4 DELETE GIFT
+@router.delete("/gifts/{gift_id}", response_model=APIResponse[None])
+async def delete_gift(gift_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    gift = db.query(PlatformItem).filter(PlatformItem.id == gift_id, PlatformItem.item_type == "gift").first()
+    if not gift:
+        raise HTTPException(status_code=404, detail="Gift not found")
+        
+    db.delete(gift)
+    db.commit()
+    return APIResponse(status="success", message="Gift deleted successfully")
+
+# 6.5 BLOCK GIFT (Modal Action)
+@router.patch("/gifts/{gift_id}/block", response_model=APIResponse[None])
+async def block_gift(gift_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    gift = db.query(PlatformItem).filter(PlatformItem.id == gift_id, PlatformItem.item_type == "gift").first()
+    if not gift:
+        raise HTTPException(status_code=404, detail="Gift not found")
+        
+    gift.status = "blocked"
+    db.commit()
+    return APIResponse(status="success", message="Gift blocked successfully")
+
 
 
 # 5. ADMIN SETTINGS
