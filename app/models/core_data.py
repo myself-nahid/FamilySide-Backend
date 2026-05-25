@@ -1,21 +1,36 @@
-from sqlalchemy import JSON, Column, DateTime, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text, JSON
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from sqlalchemy.sql import func
 from app.db.session import Base
 
+# TAXONOMY (Categories & Tags)
 class Category(Base):
     __tablename__ = "categories"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    is_active = Column(Boolean, default=True) 
+    
+    # Relationship to Sub-Categories
+    sub_categories = relationship("SubCategory", back_populates="category", cascade="all, delete-orphan")
+
+class SubCategory(Base):
+    __tablename__ = "sub_categories"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"))
+    is_active = Column(Boolean, default=True)
+    
+    category = relationship("Category", back_populates="sub_categories")
 
 class Tag(Base):
     __tablename__ = "tags"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    is_active = Column(Boolean, default=True)
 
+
+# PLATFORM ITEMS (Activities, Events, Gifts)
 class PlatformItem(Base):
-    """Unified model for Activity, Event, and Gift"""
     __tablename__ = "platform_items"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -35,13 +50,20 @@ class PlatformItem(Base):
     whatsapp = Column(String, nullable=True)
     instagram = Column(String, nullable=True)
     
-    # Scheduling (Mainly for Events/Activities)
+    # Activity specific
+    opening_days = Column(String, nullable=True)
+    opening_hours = Column(String, nullable=True)
+    
+    # Event / Gift Specific
     date = Column(Date, nullable=True)
     start_time = Column(Time, nullable=True)
     end_time = Column(Time, nullable=True)
     
-    # Status Workflow (Crucial for Admin Dashboard)
-    # Statuses: 'pending', 'approved', 'rejected', 'flagged', 'blocked'
+    # Taxonomy (JSON)
+    sub_categories = Column(JSON, nullable=True)
+    tags = Column(JSON, nullable=True)
+    
+    # Status Workflow
     status = Column(String, default="pending") 
     image_url = Column(String, nullable=True)
     created_at = Column(Date, default=func.now())
@@ -49,22 +71,17 @@ class PlatformItem(Base):
     creator = relationship("User", backref="created_items")
     category = relationship("Category")
 
-    # Activity specific fields
-    opening_days = Column(String, nullable=True)
-    opening_hours = Column(String, nullable=True)
-    sub_categories = Column(JSON, nullable=True) # Will store ["Doctors", "Nurseries"]
-    tags = Column(JSON, nullable=True)           # Will store ["Toddler", "Indoor"]
 
+# NOTIFICATIONS (Admin Approvals)
 class Notification(Base):
     __tablename__ = "notifications"
     
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False) # e.g., "New Event Added"
-    subtitle = Column(String, nullable=False) # e.g., "John Doe want to Join"
+    title = Column(String, nullable=False)
+    subtitle = Column(String, nullable=False)
     
-    # Polymorphic links
-    item_type = Column(String, nullable=False) # 'activity', 'event', 'gift'
-    item_id = Column(Integer, nullable=False) # Linked item's ID
+    item_type = Column(String, nullable=False)
+    item_id = Column(Integer, nullable=False) 
     
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=func.now())
+    created_at = Column(Date, default=func.now())

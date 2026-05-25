@@ -247,3 +247,17 @@ class GiftDetailResponse(BaseModel):
     
     # Mock 'Includes' array for the UI design in Image 3
     includes: List[str] = []
+
+class TaxonomyRequest(BaseModel):
+    name: str
+
+class SubCategoryRequest(BaseModel):
+    name: str
+    category_id: int
+
+class TaxonomyResponseItem(BaseModel):
+    id: int
+    name: str
+    is_active: bool
+    category_id: Optional[int] = None # Used for Sub-categories only
+    category_name: Optional[str] = None # Used for Sub-categories only

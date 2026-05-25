@@ -21,6 +21,8 @@ from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
     ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse
 )
+from app.models.core_data import Category, SubCategory, Tag
+from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem
 from app.models.core_data import Notification
 from app.core.security import get_password_hash, verify_password
 
@@ -1298,6 +1300,122 @@ async def block_gift(gift_id: int, db: Session = Depends(get_db), admin: User = 
     gift.status = "blocked"
     db.commit()
     return APIResponse(status="success", message="Gift blocked successfully")
+
+
+"""7. TAXONOMY MANAGEMENT (Categories, Sub-Categories, Tags)
+This section includes all endpoints related to managing the platform's taxonomies, including categories, sub-categories, and tags. Each taxonomy type has endpoints for listing with pagination and search, creating new entries, editing existing entries, and toggling active/block status. These endpoints are designed to support the full lifecycle of taxonomy management from the admin dashboard."""
+
+# 7.1 CATEGORY MANAGEMENT
+@router.get("/categories", response_model=APIResponse[dict])
+async def get_categories(page: int = 1, limit: int = 20, search: Optional[str] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    query = db.query(Category)
+    if search: query = query.filter(Category.name.ilike(f"%{search}%"))
+    
+    total = query.count()
+    categories = query.order_by(Category.id.desc()).offset((page - 1) * limit).limit(limit).all()
+    
+    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active) for c in categories]
+    return APIResponse(status="success", message="Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
+
+@router.post("/categories", response_model=APIResponse[None])
+async def create_category(payload: TaxonomyRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    if db.query(Category).filter(Category.name.ilike(payload.name)).first():
+        raise HTTPException(status_code=400, detail="Category already exists")
+    db.add(Category(name=payload.name))
+    db.commit()
+    return APIResponse(status="success", message="Category created successfully")
+
+@router.put("/categories/{cat_id}", response_model=APIResponse[None])
+async def edit_category(cat_id: int, payload: TaxonomyRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    cat = db.query(Category).filter(Category.id == cat_id).first()
+    if not cat: raise HTTPException(status_code=404, detail="Category not found")
+    cat.name = payload.name
+    db.commit()
+    return APIResponse(status="success", message="Category updated")
+
+@router.patch("/categories/{cat_id}/toggle", response_model=APIResponse[None])
+async def toggle_category_status(cat_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    cat = db.query(Category).filter(Category.id == cat_id).first()
+    if not cat: raise HTTPException(status_code=404, detail="Category not found")
+    cat.is_active = not cat.is_active # Toggles between True and False
+    db.commit()
+    return APIResponse(status="success", message=f"Category {'activated' if cat.is_active else 'blocked'}")
+
+
+# 7.2 SUB-CATEGORY MANAGEMENT
+@router.get("/sub-categories", response_model=APIResponse[dict])
+async def get_sub_categories(page: int = 1, limit: int = 20, search: Optional[str] = None, category_id: Optional[int] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    query = db.query(SubCategory)
+    if search: query = query.filter(SubCategory.name.ilike(f"%{search}%"))
+    if category_id: query = query.filter(SubCategory.category_id == category_id)
+    
+    total = query.count()
+    sub_cats = query.order_by(SubCategory.id.desc()).offset((page - 1) * limit).limit(limit).all()
+    
+    items = [TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats]
+    return APIResponse(status="success", message="Sub-Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
+
+@router.post("/sub-categories", response_model=APIResponse[None])
+async def create_sub_category(payload: SubCategoryRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    if not db.query(Category).filter(Category.id == payload.category_id).first():
+        raise HTTPException(status_code=404, detail="Parent Category not found")
+    db.add(SubCategory(name=payload.name, category_id=payload.category_id))
+    db.commit()
+    return APIResponse(status="success", message="Sub-Category created successfully")
+
+@router.put("/sub-categories/{sub_id}", response_model=APIResponse[None])
+async def edit_sub_category(sub_id: int, payload: SubCategoryRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    sub = db.query(SubCategory).filter(SubCategory.id == sub_id).first()
+    if not sub: raise HTTPException(status_code=404, detail="Sub-Category not found")
+    sub.name = payload.name
+    sub.category_id = payload.category_id
+    db.commit()
+    return APIResponse(status="success", message="Sub-Category updated")
+
+@router.patch("/sub-categories/{sub_id}/toggle", response_model=APIResponse[None])
+async def toggle_sub_category_status(sub_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    sub = db.query(SubCategory).filter(SubCategory.id == sub_id).first()
+    if not sub: raise HTTPException(status_code=404, detail="Sub-Category not found")
+    sub.is_active = not sub.is_active
+    db.commit()
+    return APIResponse(status="success", message=f"Sub-Category {'activated' if sub.is_active else 'blocked'}")
+
+
+# 7.3 TAG MANAGEMENT
+@router.get("/tags", response_model=APIResponse[dict])
+async def get_tags(page: int = 1, limit: int = 20, search: Optional[str] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    query = db.query(Tag)
+    if search: query = query.filter(Tag.name.ilike(f"%{search}%"))
+    
+    total = query.count()
+    tags = query.order_by(Tag.id.desc()).offset((page - 1) * limit).limit(limit).all()
+    
+    items = [TaxonomyResponseItem(id=t.id, name=t.name, is_active=t.is_active) for t in tags]
+    return APIResponse(status="success", message="Tags fetched", data={"total": total, "page": page, "limit": limit, "items": items})
+
+@router.post("/tags", response_model=APIResponse[None])
+async def create_tag(payload: TaxonomyRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    if db.query(Tag).filter(Tag.name.ilike(payload.name)).first():
+        raise HTTPException(status_code=400, detail="Tag already exists")
+    db.add(Tag(name=payload.name))
+    db.commit()
+    return APIResponse(status="success", message="Tag created successfully")
+
+@router.put("/tags/{tag_id}", response_model=APIResponse[None])
+async def edit_tag(tag_id: int, payload: TaxonomyRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag: raise HTTPException(status_code=404, detail="Tag not found")
+    tag.name = payload.name
+    db.commit()
+    return APIResponse(status="success", message="Tag updated")
+
+@router.patch("/tags/{tag_id}/toggle", response_model=APIResponse[None])
+async def toggle_tag_status(tag_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag: raise HTTPException(status_code=404, detail="Tag not found")
+    tag.is_active = not tag.is_active
+    db.commit()
+    return APIResponse(status="success", message=f"Tag {'activated' if tag.is_active else 'blocked'}")
 
 
 
