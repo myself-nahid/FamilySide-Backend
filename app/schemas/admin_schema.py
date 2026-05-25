@@ -193,3 +193,29 @@ class CreateActivityRequest(BaseModel):
     opening_days: Optional[str] = None
     opening_hours: Optional[str] = None
     description: str
+
+class EventListItem(BaseModel):
+    id: int
+    name: str
+    created_by: str   
+    category: str
+    location: str
+    fee: float
+
+class EventDetailResponse(BaseModel):
+    id: int
+    name: str
+    image_url: Optional[str] = None
+    description: Optional[str] = None
+    website: Optional[str] = None
+    location: Optional[str] = None
+    created_by: str
+    status: str
+    date_added: str
+    whatsapp: Optional[str] = None
+    
+    # Event Specifics
+    date: Optional[str] = None
+    time: Optional[str] = None
+    
+    tags: List[str] = []

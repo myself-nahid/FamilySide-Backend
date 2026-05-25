@@ -19,7 +19,7 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse
 )
 from app.models.core_data import Notification
 from app.core.security import get_password_hash, verify_password
@@ -885,6 +885,223 @@ async def unblock_activity(
     db.commit()
     
     return APIResponse(status="success", message=f"Activity '{activity.name}' has been restored.")
+
+
+"""5. EVENT MANAGEMENT
+This section includes all endpoints related to managing events, including listing events with pagination, search, and creator type filtering, viewing detailed event modals, creating new events with form-data and file upload, and deleting events. These endpoints are designed to support the full lifecycle of event management from the admin dashboard."""
+
+# 5.1 GET ALL EVENTS (Paginated + Searchable + Filter by Creator Type)
+@router.get("/events", response_model=APIResponse[dict])
+async def get_events_paginated(
+    page: int = 1,
+    limit: int = 10,
+    search: Optional[str] = None,
+    creator_type: Optional[str] = "all", # Filter by "Admin", "User", "Provider"
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    query = db.query(PlatformItem).filter(PlatformItem.item_type == "event")
+    
+    if search:
+        query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
+        
+    if creator_type and creator_type != "all":
+        query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
+
+    total_count = query.count()
+    offset = (page - 1) * limit
+    events = query.order_by(PlatformItem.created_at.desc()).offset(offset).limit(limit).all()
+    
+    event_list = []
+    for event in events:
+        creator_label = "Admin"
+        if event.creator:
+            creator_label = event.creator.user_type.capitalize() if event.creator.user_type else "User"
+            
+        event_list.append(EventListItem(
+            id=event.id,
+            name=event.name,
+            created_by=creator_label,
+            category=event.category.name if event.category else "Uncategorized",
+            location=event.location or "N/A",
+            fee=event.price or 0.0
+        ))
+        
+    return APIResponse(
+        status="success", 
+        message="Events fetched", 
+        data={"total": total_count, "page": page, "limit": limit, "items": event_list}
+    )
+
+# 5.2 VIEW EVENT DETAILS 
+@router.get("/events/{event_id}", response_model=APIResponse[EventDetailResponse])
+async def get_event_detail(
+    event_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    event = db.query(PlatformItem).filter(
+        PlatformItem.id == event_id, 
+        PlatformItem.item_type == "event"
+    ).first()
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+        
+    creator_label = "Admin"
+    if event.creator:
+        creator_label = event.creator.user_type.capitalize() if event.creator.user_type else "User"
+
+    # Combine start and end time into one readable string
+    time_str = "N/A"
+    if event.start_time:
+        time_str = event.start_time.strftime("%I:%M %p")
+        if event.end_time:
+            time_str += f" to {event.end_time.strftime('%I:%M %p')}"
+
+    # Safely parse JSON tags
+    tags = event.tags if isinstance(event.tags, list) else []
+
+    detail = EventDetailResponse(
+        id=event.id,
+        name=event.name,
+        image_url=event.image_url,
+        description=event.description,
+        website=event.website,
+        location=event.location,
+        created_by=creator_label,
+        status=event.status.capitalize(),
+        date_added=event.created_at.strftime("%d %b %Y") if event.created_at else "N/A",
+        whatsapp=event.whatsapp,
+        date=event.date.strftime("%d %b %Y") if event.date else "N/A",
+        time=time_str,
+        tags=tags
+    )
+    
+    return APIResponse(status="success", message="Event details fetched", data=detail)
+
+
+# 5.3 CREATE EVENT 
+@router.post("/events", response_model=APIResponse[None])
+async def create_event(
+    name: str = Form(...),
+    location: str = Form(...),
+    category_id: int = Form(...),
+    price: float = Form(0.0),
+    description: str = Form(...),
+    
+    website: Optional[str] = Form(None),
+    whatsapp: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    instagram: Optional[str] = Form(None),
+    
+    # Dates and times are accepted as strings from the UI
+    date: Optional[str] = Form(None),         # Expected format: "16/04/2026" or "2026-04-16"
+    start_time: Optional[str] = Form(None),   # Expected format: "10:00 AM" or "10:00"
+    end_time: Optional[str] = Form(None),     # Expected format: "09:00 PM" or "21:00"
+    
+    sub_categories: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    # 1. Handle File Upload
+    saved_image_path = None
+    if photo:
+        UPLOAD_DIR = "uploads/events"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        file_extension = photo.filename.split(".")[-1]
+        file_path = os.path.join(UPLOAD_DIR, f"event_{datetime.utcnow().timestamp()}.{file_extension}")
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        saved_image_path = f"/{file_path}"
+
+    # 2. Parse JSON fields
+    import json
+    parsed_sub = []
+    parsed_tags = []
+    if sub_categories:
+        try: parsed_sub = json.loads(sub_categories)
+        except: parsed_sub = [sub_categories]
+    if tags:
+        try: parsed_tags = json.loads(tags)
+        except: parsed_tags = [tags]
+
+    # 3. Parse Dates and Times safely
+    parsed_date = None
+    parsed_start = None
+    parsed_end = None
+    
+    if date:
+        try: parsed_date = datetime.strptime(date, "%d/%m/%Y").date()
+        except: 
+            try: parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+            except: pass
+            
+    if start_time:
+        try: parsed_start = datetime.strptime(start_time, "%I:%M %p").time()
+        except: 
+            try: parsed_start = datetime.strptime(start_time, "%H:%M").time()
+            except: pass
+            
+    if end_time:
+        try: parsed_end = datetime.strptime(end_time, "%I:%M %p").time()
+        except: 
+            try: parsed_end = datetime.strptime(end_time, "%H:%M").time()
+            except: pass
+
+    # 4. Save to Database
+    new_event = PlatformItem(
+        item_type="event",
+        name=name,
+        location=location,
+        category_id=category_id,
+        price=price,
+        description=description,
+        website=website,
+        whatsapp=whatsapp,
+        email=email,
+        instagram=instagram,
+        date=parsed_date,
+        start_time=parsed_start,
+        end_time=parsed_end,
+        sub_categories=parsed_sub,
+        tags=parsed_tags,
+        image_url=saved_image_path,
+        creator_id=admin.id,
+        status="approved"
+    )
+    
+    db.add(new_event)
+    db.commit()
+    
+    return APIResponse(status="success", message="Event created successfully!")
+
+
+# 5.4 DELETE EVENT
+@router.delete("/events/{event_id}", response_model=APIResponse[None])
+async def delete_event(event_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    event = db.query(PlatformItem).filter(PlatformItem.id == event_id, PlatformItem.item_type == "event").first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+        
+    db.delete(event)
+    db.commit()
+    return APIResponse(status="success", message="Event deleted successfully")
+
+
+# 5.5 BLOCK EVENT (Modal Action)
+@router.patch("/events/{event_id}/block", response_model=APIResponse[None])
+async def block_event(event_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    event = db.query(PlatformItem).filter(PlatformItem.id == event_id, PlatformItem.item_type == "event").first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+        
+    event.status = "blocked"
+    db.commit()
+    return APIResponse(status="success", message="Event blocked successfully")
 
 
 # 5. ADMIN SETTINGS
