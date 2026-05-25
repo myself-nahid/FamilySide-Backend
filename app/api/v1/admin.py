@@ -1,6 +1,6 @@
 from alembic.environment import Optional
 from alembic.util import status
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db, get_current_admin
@@ -9,6 +9,9 @@ from app.models.core_data import PlatformItem, Category
 from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_
+import os
+import shutil
+import json
 from app.schemas.admin_schema import (
     DashboardOverviewResponse, TrendMetric, StatusDistribution,
     FlaggedItemListItem, PendingApprovalListItem, UpcomingEventListItem,
@@ -16,7 +19,7 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest
 )
 from app.models.core_data import Notification
 from app.core.security import get_password_hash, verify_password
@@ -647,6 +650,242 @@ async def reject_notification_item(
     db.commit()
     
     return APIResponse(status="success", message=f"{item.item_type.capitalize()} has been rejected successfully.")
+
+
+"""4. ACTIVITY MANAGEMENT
+This section includes all endpoints related to managing activities, including listing activities with pagination and search, viewing detailed activity modals, creating new activities, and deleting activities. These endpoints are designed to support the full lifecycle of activity management from the admin dashboard."""
+
+# 4.1 GET ALL ACTIVITIES (Paginated + Searchable + Filter by Creator Type)
+@router.get("/activities", response_model=APIResponse[dict])
+async def get_activities_paginated(
+    page: int = 1,
+    limit: int = 10,
+    search: Optional[str] = None,
+    creator_type: Optional[str] = "all", # Filter by "Admin", "User", "Provider"
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    query = db.query(PlatformItem).filter(PlatformItem.item_type == "activity")
+    
+    if search:
+        query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
+        
+    # Join with User table to filter by creator type if needed
+    if creator_type and creator_type != "all":
+        query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
+
+    total_count = query.count()
+    offset = (page - 1) * limit
+    activities = query.order_by(PlatformItem.created_at.desc()).offset(offset).limit(limit).all()
+    
+    activity_list = []
+    for activity in activities:
+        creator_label = "Admin"
+        if activity.creator:
+            creator_label = activity.creator.user_type.capitalize() if activity.creator.user_type else "User"
+            
+        activity_list.append(ActivityListItem(
+            id=activity.id,
+            name=activity.name,
+            created_by=creator_label,
+            category=activity.category.name if activity.category else "Uncategorized",
+            location=activity.location or "N/A",
+            fee=activity.price or 0.0
+        ))
+        
+    return APIResponse(
+        status="success", 
+        message="Activities fetched", 
+        data={"total": total_count, "page": page, "limit": limit, "items": activity_list}
+    )
+
+# 4.2 VIEW ACTIVITY DETAILS 
+@router.get("/activities/{activity_id}", response_model=APIResponse[ActivityDetailResponse])
+async def get_activity_detail(
+    activity_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    activity = db.query(PlatformItem).filter(
+        PlatformItem.id == activity_id, 
+        PlatformItem.item_type == "activity"
+    ).first()
+    
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+        
+    creator_label = "Admin"
+    if activity.creator:
+        creator_label = activity.creator.user_type.capitalize() if activity.creator.user_type else "User"
+
+    # Mock tags for MVP display purposes
+    mock_tags = ["Education", "Indoor", "Paid"]
+
+    detail = ActivityDetailResponse(
+        id=activity.id,
+        name=activity.name,
+        image_url=activity.image_url,
+        description=activity.description,
+        website=activity.website,
+        location=activity.location,
+        created_by=creator_label,
+        status=activity.status.capitalize(),
+        date_added=activity.created_at.strftime("%d %b %Y") if activity.created_at else "N/A",
+        whatsapp=activity.whatsapp,
+        opening_days=activity.opening_days,
+        opening_hours=activity.opening_hours,
+        tags=mock_tags
+    )
+    
+    return APIResponse(status="success", message="Activity details fetched", data=detail)
+
+# 4.3 CREATE ACTIVITY
+@router.post("/activities", response_model=APIResponse[None])
+async def create_activity(
+    # Core fields
+    name: str = Form(...),
+    location: str = Form(...),
+    category_id: int = Form(...),
+    price: float = Form(0.0),
+    description: str = Form(...),
+    
+    # Optional text fields
+    website: Optional[str] = Form(None),
+    whatsapp: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    instagram: Optional[str] = Form(None),
+    opening_days: Optional[str] = Form(None),
+    opening_hours: Optional[str] = Form(None),
+    
+    # Multi-select fields (Sent as JSON strings from frontend)
+    sub_categories: Optional[str] = Form(None), # e.g., '["Doctors", "Nurseries"]'
+    tags: Optional[str] = Form(None),           # e.g., '["Indoor", "Paid"]'
+    
+    # Image Upload
+    photo: Optional[UploadFile] = File(None),
+    
+    # Dependencies
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    # 1. Handle File Upload (If photo is provided)
+    saved_image_path = None
+    if photo:
+        UPLOAD_DIR = "uploads/activities"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        
+        # Create a unique filename
+        file_extension = photo.filename.split(".")[-1]
+        file_name = f"activity_{datetime.utcnow().timestamp()}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        saved_image_path = f"/{file_path}"
+
+    # 2. Parse JSON strings back to Python lists
+    parsed_sub_categories = []
+    parsed_tags = []
+    if sub_categories:
+        try: parsed_sub_categories = json.loads(sub_categories)
+        except: parsed_sub_categories = [sub_categories] # Fallback if standard string
+        
+    if tags:
+        try: parsed_tags = json.loads(tags)
+        except: parsed_tags = [tags]
+
+    # 3. Save to Database
+    new_activity = PlatformItem(
+        item_type="activity",
+        name=name,
+        location=location,
+        category_id=category_id,
+        price=price,
+        description=description,
+        website=website,
+        whatsapp=whatsapp,
+        email=email,
+        instagram=instagram,
+        opening_days=opening_days,
+        opening_hours=opening_hours,
+        sub_categories=parsed_sub_categories, # Save as JSON
+        tags=parsed_tags,                     # Save as JSON
+        image_url=saved_image_path,           # Save the uploaded image URL
+        creator_id=admin.id,
+        status="approved" # Auto-approved by admin
+    )
+    
+    db.add(new_activity)
+    db.commit()
+    
+    return APIResponse(status="success", message="Activity created successfully with photo!")
+
+# 4.4 DELETE ACTIVITY 
+@router.delete("/activities/{activity_id}", response_model=APIResponse[None])
+async def delete_activity(
+    activity_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    activity = db.query(PlatformItem).filter(PlatformItem.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+        
+    db.delete(activity)
+    db.commit()
+    
+    return APIResponse(status="success", message="Activity deleted successfully")
+
+
+# 4.5 BLOCK ACTIVITY 
+@router.patch("/activities/{activity_id}/block", response_model=APIResponse[None])
+async def block_activity(
+    activity_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Blocks an activity, making it invisible to end-users 
+    but keeping it in the admin records.
+    """
+    activity = db.query(PlatformItem).filter(
+        PlatformItem.id == activity_id, 
+        PlatformItem.item_type == "activity"
+    ).first()
+    
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+        
+    if activity.status == "blocked":
+        raise HTTPException(status_code=400, detail="Activity is already blocked")
+        
+    # Change status to blocked
+    activity.status = "blocked"
+    db.commit()
+    
+    return APIResponse(status="success", message=f"Activity '{activity.name}' has been blocked successfully.")
+
+# 4.6 UNBLOCK ACTIVITY
+@router.patch("/activities/{activity_id}/unblock", response_model=APIResponse[None])
+async def unblock_activity(
+    activity_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Restores a blocked activity back to approved status."""
+    activity = db.query(PlatformItem).filter(
+        PlatformItem.id == activity_id, 
+        PlatformItem.item_type == "activity"
+    ).first()
+    
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+        
+    activity.status = "approved"
+    db.commit()
+    
+    return APIResponse(status="success", message=f"Activity '{activity.name}' has been restored.")
+
 
 # 5. ADMIN SETTINGS
 @router.patch("/settings/profile")

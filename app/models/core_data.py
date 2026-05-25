@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text
+from sqlalchemy import JSON, Column, DateTime, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -48,6 +48,12 @@ class PlatformItem(Base):
 
     creator = relationship("User", backref="created_items")
     category = relationship("Category")
+
+    # Activity specific fields
+    opening_days = Column(String, nullable=True)
+    opening_hours = Column(String, nullable=True)
+    sub_categories = Column(JSON, nullable=True) # Will store ["Doctors", "Nurseries"]
+    tags = Column(JSON, nullable=True)           # Will store ["Toddler", "Indoor"]
 
 class Notification(Base):
     __tablename__ = "notifications"

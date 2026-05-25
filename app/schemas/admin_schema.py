@@ -157,3 +157,39 @@ class ItemReviewDetailResponse(BaseModel):
     # Activity specific
     opening_days: Optional[str] = "10:00 AM to 09:00 PM"
     opening_hours: Optional[str] = "10:00 AM to 09:00 PM"
+
+class ActivityListItem(BaseModel):
+    id: int
+    name: str
+    created_by: str   # e.g., "Provider", "User", "Admin"
+    category: str
+    location: str
+    fee: float
+
+class ActivityDetailResponse(BaseModel):
+    id: int
+    name: str
+    image_url: Optional[str] = None
+    description: Optional[str] = None
+    website: Optional[str] = None
+    location: Optional[str] = None
+    created_by: str
+    status: str
+    date_added: str
+    whatsapp: Optional[str] = None
+    opening_days: Optional[str] = None
+    opening_hours: Optional[str] = None
+    tags: List[str] = []
+
+class CreateActivityRequest(BaseModel):
+    name: str
+    location: str
+    category_id: int
+    price: float
+    website: Optional[str] = None
+    whatsapp: Optional[str] = None
+    email: Optional[str] = None
+    instagram: Optional[str] = None
+    opening_days: Optional[str] = None
+    opening_hours: Optional[str] = None
+    description: str
