@@ -40,15 +40,15 @@ async def signup(payload: SignUpRequest, db: Session = Depends(get_db)):
     db.refresh(new_user)
     
     # 3. Generate Token
-    # access_token = create_access_token(subject=new_user.id)
-    # refresh_token = create_refresh_token(subject=new_user.id)
+    access_token = create_access_token(subject=new_user.id)
+    refresh_token = create_refresh_token(subject=new_user.id)
     return APIResponse(
         status="success",
         message="Account created successfully",
         data=TokenData(
-            # access_token=access_token,
-            # refresh_token=refresh_token,
-            # user_id=new_user.id,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_id=new_user.id,
             name=new_user.full_name,
             email=new_user.email
         )
@@ -80,7 +80,7 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)):
         data=TokenData(
             access_token=access_token,
             refresh_token=refresh_token,
-            # user_id=user.id,
+            user_id=user.id,
             name=user.full_name,
             email=user.email
         )

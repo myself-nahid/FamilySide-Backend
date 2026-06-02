@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Date, Time, ForeignKey,
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
+from sqlalchemy.dialects.postgresql import JSONB
 
 # TAXONOMY (Categories & Tags)
 class Category(Base):
@@ -60,8 +61,8 @@ class PlatformItem(Base):
     end_time = Column(Time, nullable=True)
     
     # Taxonomy (JSON)
-    sub_categories = Column(JSON, nullable=True)
-    tags = Column(JSON, nullable=True)
+    sub_categories = Column(JSONB, nullable=True)
+    tags = Column(JSONB, nullable=True)
     
     # Status Workflow
     status = Column(String, default="pending") 
@@ -70,6 +71,9 @@ class PlatformItem(Base):
 
     creator = relationship("User", backref="created_items")
     category = relationship("Category")
+
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
 
 
 # NOTIFICATIONS (Admin Approvals)
@@ -84,4 +88,12 @@ class Notification(Base):
     item_id = Column(Integer, nullable=False) 
     
     is_read = Column(Boolean, default=False)
+    created_at = Column(Date, default=func.now())
+
+class SavedItem(Base):
+    """Tracks items bookmarked by families"""
+    __tablename__ = "saved_items"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    item_id = Column(Integer, ForeignKey("platform_items.id", ondelete="CASCADE"))
     created_at = Column(Date, default=func.now())
