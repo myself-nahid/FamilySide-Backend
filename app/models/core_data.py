@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text, JSON
+from sqlalchemy import Column, DateTime, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -97,3 +97,22 @@ class SavedItem(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     item_id = Column(Integer, ForeignKey("platform_items.id", ondelete="CASCADE"))
     created_at = Column(Date, default=func.now())
+
+class Review(Base):
+    __tablename__ = "reviews"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    item_id = Column(Integer, ForeignKey("platform_items.id", ondelete="CASCADE"))
+    
+    # Matching "Write Review" UI (Image 1)
+    recommendation_level = Column(String) # Highly Recommended, Recommended, Average, Not suitable
+    comment = Column(Text)
+    category_name = Column(String) # Selected category for this review
+    tags = Column(JSON) # e.g. ["Education", "Music"]
+    
+    image_url = Column(String, nullable=True) # Review photo
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User")
+    item = relationship("PlatformItem", backref="item_reviews")

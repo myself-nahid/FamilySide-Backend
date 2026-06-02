@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from typing import List, Optional
@@ -8,8 +8,12 @@ from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.core_data import PlatformItem, Category, SavedItem, SubCategory
 from app.schemas.auth_schema import APIResponse
-from app.schemas.family_schema import HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, SearchFilterParams, SubCategoryListResponse
+from app.schemas.family_schema import HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, ReviewResponse, SearchFilterParams, SubCategoryListResponse
 from app.core.utils import calculate_distance_km
+from fastapi import Form, File, UploadFile
+from app.models.core_data import Review
+import os
+import shutil
 
 router = APIRouter(prefix="/family", tags=["Family App - Home"])
 
@@ -449,3 +453,116 @@ async def search_and_filter_items(
         message="Filtered results fetched",
         data={"total": total_results, "items": paginated_items}
     )
+
+
+# 1. MAP DISCOVERY 
+@router.get("/explore/map", response_model=APIResponse[List[MapPinResponse]])
+async def get_map_pins(
+    category_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(PlatformItem).filter(PlatformItem.status == "approved")
+    if category_id:
+        query = query.filter(PlatformItem.category_id == category_id)
+        
+    items = query.all()
+    pins = [
+        MapPinResponse(
+            id=i.id, item_type=i.item_type, lat=i.lat or 0.0, lng=i.lng or 0.0,
+            category_icon=i.category.name if i.category else "General"
+        ) for i in items if i.lat and i.lng
+    ]
+    return APIResponse(status="success", message="Pins loaded", data=pins)
+
+# 2. ITEM FULL DETAILS 
+@router.get("/items/{item_id}/details", response_model=APIResponse[ItemDetailFullResponse])
+async def get_item_details(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # Fetch nested lists for the detail page
+    events = db.query(PlatformItem).filter(PlatformItem.item_type == "event", PlatformItem.category_id == item.category_id).limit(2).all()
+    gifts = db.query(PlatformItem).filter(PlatformItem.item_type == "gift").limit(2).all()
+    
+    reviews = db.query(Review).filter(Review.item_id == item_id).order_by(Review.created_at.desc()).limit(5).all()
+
+    # Formatted Response
+    data = ItemDetailFullResponse(
+        id=item.id,
+        name=item.name,
+        description=item.description or "",
+        image_url=item.image_url,
+        category_name=item.category.name if item.category else "Playground",
+        lat=item.lat or 0.0, lng=item.lng or 0.0,
+        address=item.location or "N/A",
+        opening_hours=item.opening_hours or "07:00 AM to 09:00 PM",
+        website=item.website, instagram=item.instagram, whatsapp=item.whatsapp,
+        related_events=[], # Mapping logic here (similar to HomeItemCard)
+        gift_ideas=[],     # Mapping logic here
+        reviews=[
+            ReviewResponse(
+                user_name=r.user.full_name, user_image=r.user.profile_image_url,
+                recommendation_level=r.recommendation_level, comment=r.comment,
+                date=r.created_at.strftime("%d %B %Y")
+            ) for r in reviews
+        ],
+        average_rating_label="Recommended"
+    )
+    return APIResponse(status="success", message="Details loaded", data=data)
+
+# 3. WRITE REVIEW 
+@router.post("/items/{item_id}/reviews", response_model=APIResponse[None])
+async def post_item_review(
+    item_id: int,
+    category_name: str = Form(...),
+    recommendation_level: str = Form(...), 
+    comment: str = Form(...),
+    tags: Optional[str] = Form(None), # Make it optional to prevent crashes
+    photo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    import json
+    # 1. Check if the item actually exists
+    item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
+    if not item:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Item with ID {item_id} not found. You cannot review a non-existent item."
+        )
+    
+    # 1. Handle File Upload
+    saved_path = None
+    if photo:
+        os.makedirs("uploads/reviews", exist_ok=True)
+        saved_path = f"uploads/reviews/{datetime.utcnow().timestamp()}_{photo.filename}"
+        with open(saved_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+
+    # 2. ROBUST TAG PARSING (Fixes the 500 Error)
+    parsed_tags = []
+    if tags:
+        try:
+            # Attempt 1: Try parsing as a JSON array (e.g. ["Tag1", "Tag2"])
+            parsed_tags = json.loads(tags)
+            if not isinstance(parsed_tags, list):
+                parsed_tags = [str(parsed_tags)]
+        except json.JSONDecodeError:
+            # Attempt 2: Fallback to comma-separated string (e.g. "Tag1, Tag2")
+            parsed_tags = [t.strip() for t in tags.split(",") if t.strip()]
+
+    # 3. Save to Database
+    new_review = Review(
+        user_id=current_user.id,
+        item_id=item_id,
+        category_name=category_name,
+        recommendation_level=recommendation_level,
+        comment=comment,
+        tags=parsed_tags, # Save the cleaned list
+        image_url=f"/{saved_path}" if saved_path else None
+    )
+    db.add(new_review)
+    db.commit()
+    
+    return APIResponse(status="success", message="Review submitted successfully!")

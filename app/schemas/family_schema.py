@@ -46,3 +46,37 @@ class SearchFilterParams(BaseModel):
     categories: Optional[List[str]] = None # Multi-select categories
     child_age: Optional[str] = None       # "0-3 years", "3-8 years", etc.
     price_type: Optional[str] = "All"      # "All", "Free", "Paid"
+
+class MapPinResponse(BaseModel):
+    id: int
+    item_type: str
+    lat: float
+    lng: float
+    category_icon: str # Derived from category
+
+class ReviewResponse(BaseModel):
+    user_name: str
+    user_image: Optional[str]
+    recommendation_level: str
+    comment: str
+    date: str
+
+class ItemDetailFullResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    image_url: Optional[str]
+    category_name: str
+    lat: float
+    lng: float
+    address: str
+    opening_hours: str
+    website: Optional[str]
+    instagram: Optional[str]
+    whatsapp: Optional[str]
+    
+    # Nested components seen in Image 3
+    related_events: List[HomeItemCard]
+    gift_ideas: List[HomeItemCard]
+    reviews: List[ReviewResponse]
+    average_rating_label: str # e.g. "Recommended"
