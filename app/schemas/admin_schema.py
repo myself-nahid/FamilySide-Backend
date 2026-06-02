@@ -261,3 +261,13 @@ class TaxonomyResponseItem(BaseModel):
     is_active: bool
     category_id: Optional[int] = None # Used for Sub-categories only
     category_name: Optional[str] = None # Used for Sub-categories only
+
+class AdminProfileUpdateRequest(BaseModel):
+    name: str
+    email: EmailStr
+    phone_number: Optional[str] = None
+
+class AdminProfileResponse(BaseModel):
+    name: str
+    email: str
+    phone_number: Optional[str] = None

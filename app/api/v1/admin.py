@@ -19,7 +19,7 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse
 )
 from app.models.core_data import Category, SubCategory, Tag
 from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem
@@ -1418,21 +1418,76 @@ async def toggle_tag_status(tag_id: int, db: Session = Depends(get_db), admin: U
     return APIResponse(status="success", message=f"Tag {'activated' if tag.is_active else 'blocked'}")
 
 
+"""
+8. ADMIN SETTINGS
+"""
 
-# 5. ADMIN SETTINGS
-@router.patch("/settings/profile")
-async def update_admin_profile(payload: AdminProfileUpdateRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+# 8 ADMIN SETTINGS (Profile & Security)
+@router.get("/settings/profile", response_model=APIResponse[AdminProfileResponse])
+async def get_admin_profile(
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Fetches the admin's current profile data to populate the Settings form.
+    """
+    detail = AdminProfileResponse(
+        name=admin.full_name,
+        email=admin.email,
+        phone_number=admin.phone_number
+    )
+    return APIResponse(status="success", message="Profile data fetched", data=detail)
+
+
+@router.patch("/settings/profile", response_model=APIResponse[AdminProfileResponse])
+async def update_admin_profile(
+    payload: AdminProfileUpdateRequest, 
+    db: Session = Depends(get_db), 
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Updates the Account Information form (Name, Email, Phone).
+    """
+    # Prevent changing email to one that already exists for another user
+    if payload.email != admin.email:
+        existing_user = db.query(User).filter(User.email == payload.email).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="This email is already in use by another account.")
+            
     admin.full_name = payload.name
     admin.email = payload.email
     admin.phone_number = payload.phone_number
     db.commit()
-    return {"status": "success", "message": "Profile updated"}
+    
+    # Return the updated data back to the frontend
+    updated_detail = AdminProfileResponse(
+        name=admin.full_name,
+        email=admin.email,
+        phone_number=admin.phone_number
+    )
+    return APIResponse(status="success", message="Account information updated successfully", data=updated_detail)
 
-@router.patch("/settings/security")
-async def update_admin_password(payload: ChangePasswordRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+
+@router.patch("/settings/security", response_model=APIResponse[None])
+async def update_admin_password(
+    payload: ChangePasswordRequest, 
+    db: Session = Depends(get_db), 
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Updates the Security form (Password change).
+    Note: The frontend should verify 'New Password' and 'Confirm New Password' 
+    match before sending this request to the backend.
+    """
+    # 1. Verify that the current password provided is correct
     if not verify_password(payload.current_password, admin.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect current password")
     
+    # 2. Prevent reusing the same password
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="New password cannot be the same as the current password")
+    
+    # 3. Hash and save the new password
     admin.hashed_password = get_password_hash(payload.new_password)
     db.commit()
-    return {"status": "success", "message": "Password updated successfully"}
+    
+    return APIResponse(status="success", message="Security password updated successfully")
