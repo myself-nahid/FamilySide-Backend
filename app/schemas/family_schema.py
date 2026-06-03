@@ -92,3 +92,16 @@ class GiftListResponse(BaseModel):
 class SaveItemRequest(BaseModel):
     item_id: int
     gift_list_id: Optional[int] = None # If null, it goes to general bookmarks
+
+class CategoryGridItem(BaseModel):
+    id: int
+    name: str
+    image_url: Optional[str] = None # For the icons in the grid
+    color_code: Optional[str] = None # e.g., "#E0F7FA" for the background
+
+class SearchTabInitResponse(BaseModel):
+    personalized_greeting: str # e.g., "For you, Mum"
+    categories: List[CategoryGridItem]
+
+class SearchHistoryResponse(BaseModel):
+    recent_searches: List[str]

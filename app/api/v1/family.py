@@ -8,7 +8,7 @@ from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.core_data import PlatformItem, Category, SavedItem, SubCategory
 from app.schemas.auth_schema import APIResponse
-from app.schemas.family_schema import HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, ReviewResponse, SearchFilterParams, SubCategoryListResponse
+from app.schemas.family_schema import CategoryGridItem, HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, ReviewResponse, SearchFilterParams, SearchTabInitResponse, SubCategoryListResponse
 from app.models.core_data import UserGiftList, SavedItem
 from app.schemas.family_schema import GiftListCreate, GiftListResponse, SaveItemRequest
 from app.core.utils import calculate_distance_km
@@ -673,3 +673,124 @@ async def toggle_save_item(
     
     db.commit()
     return APIResponse(status="success", message=message, data={"is_saved": is_saved})
+
+
+# 1. SEARCH TAB INITIALIZATION 
+@router.get("/search/init", response_model=APIResponse[SearchTabInitResponse])
+async def init_search_tab(
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Loads the initial Search screen:
+    - Dynamic greeting (e.g. 'For you, Mum')
+    - The Category Grid
+    """
+    # Dynamic greeting based on Role selected during onboarding
+    role_label = current_user.role if current_user.role else "Parent"
+    greeting = f"For you, {role_label}"
+
+    # Fetch all active categories for the grid
+    categories = db.query(Category).filter(Category.is_active == True).all()
+    
+    # Mocking colors for the UI grid as seen in Image 1
+    ui_colors = ["#E0F7FA", "#E3F2FD", "#FCE4EC", "#E8F5E9", "#FFF3E0", "#FFFDE7"]
+    
+    category_list = []
+    for idx, cat in enumerate(categories):
+        category_list.append(CategoryGridItem(
+            id=cat.id,
+            name=cat.name,
+            color_code=ui_colors[idx % len(ui_colors)]
+        ))
+
+    return APIResponse(
+        status="success", 
+        message="Search screen initialized",
+        data=SearchTabInitResponse(
+            personalized_greeting=greeting,
+            categories=category_list
+        )
+    )
+
+# 2. UNIVERSAL SEARCH ENGINE (Handles Bar, Filters, and Quick Links)
+@router.get("/search/execute", response_model=APIResponse[dict])
+async def execute_search(
+    q: Optional[str] = Query(None, alias="query"), # Text from Search Bar
+    mode: Optional[str] = "all",                 # 'for_you', 'near_you', 'gifts', 'events'
+    category_id: Optional[int] = None,
+    page: int = 1,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    The main engine for finding content.
+    It processes the Search Bar, the 4 Quick Link cards, and Category taps.
+    """
+    query = db.query(PlatformItem).filter(PlatformItem.status == "approved")
+
+    # A. Handle Search Bar Text
+    if q:
+        query = query.filter(
+            or_(
+                PlatformItem.name.ilike(f"%{q}%"),
+                PlatformItem.description.ilike(f"%{q}%")
+            )
+        )
+
+    # B. Handle Quick Action Modes
+    if mode == "gifts":
+        query = query.filter(PlatformItem.item_type == "gift")
+    elif mode == "events":
+        query = query.filter(PlatformItem.item_type == "event")
+    elif mode == "for_you":
+        # Logic: Filter by user interests set during onboarding
+        user_interest_names = [i.name for i in current_user.interests]
+        if user_interest_names:
+            query = query.filter(PlatformItem.tags.has_any(user_interest_names))
+            
+    # C. Handle Category Grid Taps
+    if category_id:
+        query = query.filter(PlatformItem.category_id == category_id)
+
+    # D. Fetch and Process results
+    raw_results = query.all()
+    processed_cards = []
+    
+    for item in raw_results:
+        # Distance calculation is essential for 'Near you' mode
+        dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        
+        # If user clicked 'Near You', exclude items further than 50km
+        if mode == "near_you" and (dist is None or dist > 50):
+            continue
+
+        processed_cards.append(HomeItemCard(
+            id=item.id,
+            item_type=item.item_type,
+            name=item.name,
+            image_url=item.image_url,
+            category_name=item.category.name if item.category else "General",
+            price=item.price,
+            distance_km=dist,
+            age_range="0-20 years", # Extracted from tags logic
+            is_recommended=True,
+            is_saved=False # Check SavedItem table
+        ))
+
+    # E. Sorting
+    if mode == "near_you":
+        processed_cards.sort(key=lambda x: x.distance_km if x.distance_km is not None else 9999)
+    else:
+        processed_cards.sort(key=lambda x: x.id, reverse=True) # Newest first
+
+    # F. Pagination
+    start = (page - 1) * limit
+    paginated_data = processed_cards[start : start + limit]
+
+    return APIResponse(
+        status="success",
+        message="Search results fetched",
+        data={"total": len(processed_cards), "items": paginated_data}
+    )
