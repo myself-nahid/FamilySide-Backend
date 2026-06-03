@@ -80,3 +80,15 @@ class ItemDetailFullResponse(BaseModel):
     gift_ideas: List[HomeItemCard]
     reviews: List[ReviewResponse]
     average_rating_label: str # e.g. "Recommended"
+
+class GiftListCreate(BaseModel):
+    name: str
+
+class GiftListResponse(BaseModel):
+    id: int
+    name: str
+    items_count: int
+
+class SaveItemRequest(BaseModel):
+    item_id: int
+    gift_list_id: Optional[int] = None # If null, it goes to general bookmarks

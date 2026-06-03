@@ -91,12 +91,15 @@ class Notification(Base):
     created_at = Column(Date, default=func.now())
 
 class SavedItem(Base):
-    """Tracks items bookmarked by families"""
     __tablename__ = "saved_items"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     item_id = Column(Integer, ForeignKey("platform_items.id", ondelete="CASCADE"))
-    created_at = Column(Date, default=func.now())
+    gift_list_id = Column(Integer, ForeignKey("user_gift_lists.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    gift_list = relationship("UserGiftList", back_populates="items")
+    item = relationship("PlatformItem")
 
 class Review(Base):
     __tablename__ = "reviews"
@@ -116,3 +119,15 @@ class Review(Base):
 
     user = relationship("User")
     item = relationship("PlatformItem", backref="item_reviews")
+
+class UserGiftList(Base):
+    """Represents a custom folder/list created by a user (Image 7)"""
+    __tablename__ = "user_gift_lists"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    name = Column(String, nullable=False) # e.g., "Birthday", "Anniversary"
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User", backref="gift_lists")
+    # Link saved items to this specific list
+    items = relationship("SavedItem", back_populates="gift_list", cascade="all, delete-orphan")

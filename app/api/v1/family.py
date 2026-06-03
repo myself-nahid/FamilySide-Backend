@@ -9,6 +9,8 @@ from app.models.user import User
 from app.models.core_data import PlatformItem, Category, SavedItem, SubCategory
 from app.schemas.auth_schema import APIResponse
 from app.schemas.family_schema import HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, ReviewResponse, SearchFilterParams, SubCategoryListResponse
+from app.models.core_data import UserGiftList, SavedItem
+from app.schemas.family_schema import GiftListCreate, GiftListResponse, SaveItemRequest
 from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
 from app.models.core_data import Review
@@ -566,3 +568,108 @@ async def post_item_review(
     db.commit()
     
     return APIResponse(status="success", message="Review submitted successfully!")
+
+# 1. SEARCH & EXPLORE ENGINE 
+@router.get("/explore/list", response_model=APIResponse[dict])
+async def explore_items_list(
+    item_type: str = "activity", # activity, event, gift
+    category_id: Optional[int] = None,
+    search: Optional[str] = None,
+    # Filter Params from Modals (Images 2 & 5)
+    max_distance: Optional[float] = None,
+    min_rating: Optional[float] = None,
+    child_age: Optional[str] = None,
+    price_type: str = "All",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Powerful extraction engine that powers the 'Explore' tabs.
+    Calculates distance and filters by age/price/rating dynamically.
+    """
+    query = db.query(PlatformItem).filter(PlatformItem.status == "approved", PlatformItem.item_type == item_type)
+    
+    if category_id: query = query.filter(PlatformItem.category_id == category_id)
+    if search: query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
+    if price_type == "Free": query = query.filter(PlatformItem.price == 0)
+    elif price_type == "Paid": query = query.filter(PlatformItem.price > 0)
+
+    raw_items = query.all()
+    processed_cards = []
+    
+    # User's saved item IDs for the bookmark icon state
+    user_saved_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
+
+    for item in raw_items:
+        dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        
+        # UI Filters
+        if max_distance and (dist is None or dist > max_distance): continue
+        if child_age and (not item.tags or child_age not in item.tags): continue
+
+        processed_cards.append(HomeItemCard(
+            id=item.id,
+            item_type=item.item_type,
+            name=item.name,
+            image_url=item.image_url,
+            category_name=item.category.name if item.category else "Health",
+            price=item.price,
+            distance_km=dist,
+            age_range=child_age or "0-20 years",
+            date_label=item.date.strftime("%d %b") if item.date else None,
+            is_recommended=True,
+            is_saved=(item.id in user_saved_ids)
+        ))
+
+    # Sort by Distance
+    processed_cards.sort(key=lambda x: x.distance_km if x.distance_km is not None else 999)
+
+    return APIResponse(status="success", message="Results loaded", data={"items": processed_cards})
+
+
+# 2. GIFT LIST MANAGEMENT 
+@router.get("/gift-lists", response_model=APIResponse[List[GiftListResponse]])
+async def get_my_gift_lists(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Fetches user's custom lists (Birthday, Anniversary, etc.)"""
+    lists = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
+    
+    # If user is new, seed the default lists seen in Image 7
+    if not lists:
+        for name in ["Birthday", "Anniversary", "Special", "General"]:
+            db.add(UserGiftList(user_id=current_user.id, name=name))
+        db.commit()
+        lists = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
+
+    data = [GiftListResponse(id=l.id, name=l.name, items_count=len(l.items)) for l in lists]
+    return APIResponse(status="success", message="Lists fetched", data=data)
+
+
+@router.post("/saved-items/toggle", response_model=APIResponse[dict])
+async def toggle_save_item(
+    payload: SaveItemRequest, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Handles clicking the bookmark icon or the 'Add to Gift List' button"""
+    existing = db.query(SavedItem).filter(
+        SavedItem.user_id == current_user.id, 
+        SavedItem.item_id == payload.item_id,
+        SavedItem.gift_list_id == payload.gift_list_id
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        message = "Removed from list"
+        is_saved = False
+    else:
+        new_save = SavedItem(
+            user_id=current_user.id, 
+            item_id=payload.item_id, 
+            gift_list_id=payload.gift_list_id
+        )
+        db.add(new_save)
+        message = "Saved to list"
+        is_saved = True
+    
+    db.commit()
+    return APIResponse(status="success", message=message, data={"is_saved": is_saved})
