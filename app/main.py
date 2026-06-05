@@ -9,6 +9,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.onboarding import router as onboarding_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.family import router as family_router
+from app.api.v1.provider import router as provider_router
 
 # Define the lifespan of the application
 # @asynccontextmanager
@@ -56,6 +57,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(onboarding_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(family_router, prefix="/api/v1")
+app.include_router(provider_router, prefix="/api/v1")
 
 @app.get("/", tags=["Health Check"])
 async def root():
