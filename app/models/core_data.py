@@ -100,7 +100,7 @@ class SavedItem(Base):
     gift_list_id = Column(Integer, ForeignKey("user_gift_lists.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 
-    gift_list = relationship("UserGiftList", back_populates="items")
+    gift_list = relationship("UserGiftList", back_populates="saved_items")
     item = relationship("PlatformItem")
 
 class Review(Base):
@@ -123,13 +123,16 @@ class Review(Base):
     item = relationship("PlatformItem", backref="item_reviews")
 
 class UserGiftList(Base):
-    """Represents a custom folder/list created by a user (Image 7)"""
     __tablename__ = "user_gift_lists"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    name = Column(String, nullable=False) # e.g., "Birthday", "Anniversary"
+    name = Column(String, nullable=False) # e.g., "Emma's Birthday"
+    occasion = Column(String, nullable=True) # e.g., "Birthday", "Christmas"
+    description = Column(Text, nullable=True) # "Gift ideas Emma will love!"
+    
     created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
-    user = relationship("User", backref="gift_lists")
-    # Link saved items to this specific list
-    items = relationship("SavedItem", back_populates="gift_list", cascade="all, delete-orphan")
+    user = relationship("User", backref="gift_folders")
+    # Link to SavedItem table
+    saved_items = relationship("SavedItem", back_populates="gift_list", cascade="all, delete-orphan")

@@ -122,3 +122,24 @@ class NotificationGroup(BaseModel):
 class NotificationListResponse(BaseModel):
     unread_count: int
     groups: List[NotificationGroup]
+
+class GiftFilterParams(BaseModel):
+    recipient: Optional[str] = None # Child, Adult
+    for_whom: Optional[str] = None  # Boy, Girl, Unisex
+    child_age: Optional[str] = None # 0-3 years, etc.
+    price_range: Optional[str] = None # Under $25, $25-$50, etc.
+
+class GiftListFolderResponse(BaseModel):
+    id: int
+    name: str
+    occasion: str
+    items_count: int
+    last_updated_label: str # e.g., "Last updated 2 days ago"
+
+class CreateGiftListRequest(BaseModel):
+    name: str
+    occasion: str
+
+class AddToGiftListRequest(BaseModel):
+    item_id: int
+    gift_list_id: int

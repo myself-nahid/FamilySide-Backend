@@ -8,9 +8,10 @@ from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.core_data import Notification, PlatformItem, Category, SavedItem, SubCategory
 from app.schemas.auth_schema import APIResponse
-from app.schemas.family_schema import CategoryGridItem, HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, NotificationGroup, NotificationItem, NotificationListResponse, ReviewResponse, SearchFilterParams, SearchTabInitResponse, SubCategoryListResponse
+from app.schemas.family_schema import CategoryGridItem, GiftFilterParams, HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, NotificationGroup, NotificationItem, NotificationListResponse, ReviewResponse, SearchFilterParams, SearchTabInitResponse, SubCategoryListResponse
 from app.models.core_data import UserGiftList, SavedItem
-from app.schemas.family_schema import GiftListCreate, GiftListResponse, SaveItemRequest
+from app.schemas.family_schema import GiftListCreate, GiftListResponse, SaveItemRequest, GiftListFolderResponse, CreateGiftListRequest, AddToGiftListRequest
+from app.models.core_data import Review
 from datetime import datetime, timedelta
 from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
@@ -875,3 +876,104 @@ async def mark_all_notifications_read(
     ).update({"is_read": True})
     db.commit()
     return APIResponse(status="success", message="All notifications marked as read")
+
+"""Gift Planner"""
+
+# 1. GIFT PLANNER SEARCH 
+@router.get("/gifts/search", response_model=APIResponse[dict])
+async def search_gift_planner(
+    q: Optional[str] = Query(None, alias="query"),
+    category: Optional[str] = "All", # Birthday, Christmas, etc.
+    filters: GiftFilterParams = Depends(),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Powerful search engine for the Gift Planner.
+    Handles occasion tabs and the complex Filter Modal (Image 4).
+    """
+    query = db.query(PlatformItem).filter(PlatformItem.item_type == "gift", PlatformItem.status == "approved")
+
+    # Filter by Occasion Tab
+    if category != "All":
+        query = query.filter(PlatformItem.tags.contains([category]))
+
+    # Filter by Search Bar
+    if q:
+        query = query.filter(PlatformItem.name.ilike(f"%{q}%"))
+
+    # Apply Modal Filters (Image 4)
+    if filters.recipient:
+        query = query.filter(PlatformItem.tags.contains([filters.recipient]))
+    if filters.for_whom:
+        query = query.filter(PlatformItem.tags.contains([filters.for_whom]))
+    if filters.child_age:
+        query = query.filter(PlatformItem.tags.contains([filters.child_age]))
+
+    # Price Range Logic
+    if filters.price_range == "Under $25": query = query.filter(PlatformItem.price < 25)
+    elif filters.price_range == "$25 - $50": query = query.filter(and_(PlatformItem.price >= 25, PlatformItem.price <= 50))
+
+    results = query.all()
+    # Reuse HomeItemCard mapping logic...
+    return APIResponse(status="success", message="Gifts found", data={"items": results})
+
+
+# 2. MY GIFT LISTS / FOLDERS 
+@router.get("/gift-planner/folders", response_model=APIResponse[dict])
+async def get_my_gift_folders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Fetches the folder overview (Emma's Birthday, etc.) seen in Image 2"""
+    
+    folders = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
+    
+    # Gifts saved but not in a folder
+    loose_items = db.query(SavedItem).filter(
+        SavedItem.user_id == current_user.id, 
+        SavedItem.gift_list_id == None
+    ).count()
+
+    data = [
+        GiftListFolderResponse(
+            id=f.id, name=f.name, occasion=f.occasion or "General",
+            items_count=len(f.saved_items),
+            last_updated_label="Last updated 2 days ago"
+        ) for f in folders
+    ]
+    
+    return APIResponse(status="success", message="Folders loaded", data={"folders": data, "loose_items_count": loose_items})
+
+
+# 3. FOLDER DETAIL VIEW 
+@router.get("/gift-planner/folders/{folder_id}")
+async def get_folder_details(folder_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Returns items inside a specific folder like 'Emma's Birthday'"""
+    folder = db.query(UserGiftList).filter(UserGiftList.id == folder_id, UserGiftList.user_id == current_user.id).first()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    items = [s.item for s in folder.saved_items]
+    return APIResponse(status="success", message="Folder items loaded", data={"name": folder.name, "items": items})
+
+
+# 4. CREATE NEW LIST & ADD ITEM 
+@router.post("/gift-planner/folders", response_model=APIResponse[None])
+async def create_new_gift_folder(payload: CreateGiftListRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Matches Image 7 Modal"""
+    new_folder = UserGiftList(user_id=current_user.id, name=payload.name, occasion=payload.occasion)
+    db.add(new_folder)
+    db.commit()
+    return APIResponse(status="success", message="List created successfully")
+
+@router.post("/gift-planner/add-to-folder", response_model=APIResponse[None])
+async def add_item_to_folder(payload: AddToGiftListRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Matches Image 5 Modal: Moves an item into a specific folder"""
+    saved_item = db.query(SavedItem).filter(SavedItem.item_id == payload.item_id, SavedItem.user_id == current_user.id).first()
+    
+    if not saved_item:
+        # If not bookmarked yet, create a new saved entry
+        saved_item = SavedItem(user_id=current_user.id, item_id=payload.item_id)
+        db.add(saved_item)
+
+    saved_item.gift_list_id = payload.gift_list_id
+    db.commit()
+    return APIResponse(status="success", message="Gift added to your list")
