@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 
 class HomeHeaderResponse(BaseModel):
@@ -143,3 +143,42 @@ class CreateGiftListRequest(BaseModel):
 class AddToGiftListRequest(BaseModel):
     item_id: int
     gift_list_id: int
+
+class SavedItemsResponse(BaseModel):
+    total_count: int
+    page: int
+    items: List[HomeItemCard]
+    # Occasion folders (only returned when item_type is 'gift')
+    gift_folders: Optional[List[GiftListResponse]] = None
+
+class UserProfileMetrics(BaseModel):
+    reviews_count: int
+    activities_count: int
+    invited_family_count: int
+    gifts_shared_count: int
+    contributor_level: str # e.g., "Local Contributor"
+    top_percentage: str # e.g., "Top 9%"
+    progress_pct: float # e.g., 0.85 (for the UI bar)
+
+class FullProfileResponse(BaseModel):
+    full_name: str
+    location_name: str
+    profile_image_url: Optional[str]
+    metrics: UserProfileMetrics
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: str
+    email: EmailStr
+    location_name: str
+
+class SupportRequest(BaseModel):
+    email: EmailStr
+    location: str
+    problem_details: str
+
+class UserReviewItem(BaseModel):
+    id: int
+    place_name: str
+    date: str
+    comment: str
+    recommendation_label: str # "Recommended"

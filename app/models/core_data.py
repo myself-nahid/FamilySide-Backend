@@ -136,3 +136,16 @@ class UserGiftList(Base):
     user = relationship("User", backref="gift_folders")
     # Link to SavedItem table
     saved_items = relationship("SavedItem", back_populates="gift_list", cascade="all, delete-orphan")
+
+class SupportMessage(Base):
+    """Stores user queries from 'Contact Support' (Image 2)"""
+    __tablename__ = "support_messages"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    email = Column(String, nullable=False)
+    location = Column(String, nullable=True)
+    problem_details = Column(Text, nullable=False)
+    status = Column(String, default="open") # open, resolved
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User")

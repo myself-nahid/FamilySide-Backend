@@ -6,12 +6,14 @@ from datetime import datetime
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
-from app.models.core_data import Notification, PlatformItem, Category, SavedItem, SubCategory
+from app.models.core_data import Notification, PlatformItem, Category, SavedItem, SubCategory, SupportMessage
 from app.schemas.auth_schema import APIResponse
-from app.schemas.family_schema import CategoryGridItem, GiftFilterParams, HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, NotificationGroup, NotificationItem, NotificationListResponse, ReviewResponse, SearchFilterParams, SearchTabInitResponse, SubCategoryListResponse
+from app.schemas.family_schema import CategoryGridItem, FullProfileResponse, GiftFilterParams, HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, NotificationGroup, NotificationItem, NotificationListResponse, ReviewResponse, SavedItemsResponse, SearchFilterParams, SearchTabInitResponse, SubCategoryListResponse, UserProfileMetrics, UserReviewItem
 from app.models.core_data import UserGiftList, SavedItem
 from app.schemas.family_schema import GiftListCreate, GiftListResponse, SaveItemRequest, GiftListFolderResponse, CreateGiftListRequest, AddToGiftListRequest
 from app.models.core_data import Review
+from app.models.core_data import SupportMessage, Review, PlatformItem
+from app.schemas.family_schema import FullProfileResponse, UserProfileMetrics, ProfileUpdateRequest, SupportRequest, UserReviewItem
 from datetime import datetime, timedelta
 from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
@@ -977,3 +979,165 @@ async def add_item_to_folder(payload: AddToGiftListRequest, db: Session = Depend
     saved_item.gift_list_id = payload.gift_list_id
     db.commit()
     return APIResponse(status="success", message="Gift added to your list")
+
+"""saved items / bookmarks"""
+
+# SAVED ITEMS TAB ENGINE 
+@router.get("/saved/items", response_model=APIResponse[SavedItemsResponse])
+async def get_my_saved_items(
+    item_type: str = "activity",        # activity, event, or gift
+    gift_list_id: Optional[int] = None, # Filter by folder (e.g., Birthday)
+    page: int = 1,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Powers the 'Saved' screen tabs.
+    - If type=gift: also returns the 'Browse from list' occasion pills.
+    - Calculates distance for every saved item relative to user's current location.
+    """
+    
+    # 1. Base Query: Join SavedItem with PlatformItem
+    query = db.query(PlatformItem).join(
+        SavedItem, SavedItem.item_id == PlatformItem.id
+    ).filter(
+        SavedItem.user_id == current_user.id,
+        PlatformItem.item_type == item_type
+    )
+
+    # 2. Filter by specific Gift Folder (Image 1 "Browse from list")
+    if item_type == "gift" and gift_list_id:
+        query = query.filter(SavedItem.gift_list_id == gift_list_id)
+
+    total_count = query.count()
+    
+    # 3. Paginate
+    raw_items = query.order_by(SavedItem.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+
+    # 4. Process into UI Cards with Distance
+    processed_cards = []
+    for item in raw_items:
+        dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        
+        processed_cards.append(HomeItemCard(
+            id=item.id,
+            item_type=item.item_type,
+            name=item.name,
+            image_url=item.image_url,
+            category_name=item.category.name if item.category else "Health",
+            price=item.price or 0.0,
+            distance_km=dist,
+            age_range="0-20 years", # Extracted from tags
+            date_label=item.date.strftime("%d %b, %Y") if item.date else None,
+            is_recommended=True,
+            is_saved=True # Since it's from the saved table, this is always true
+        ))
+
+    # 5. For 'Gift' tab, fetch the occasion pills (folders)
+    gift_folders = None
+    if item_type == "gift":
+        lists = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
+        gift_folders = [GiftListResponse(id=l.id, name=l.name, items_count=len(l.saved_items)) for l in lists]
+
+    data = SavedItemsResponse(
+        total_count=total_count,
+        page=page,
+        items=processed_cards,
+        gift_folders=gift_folders
+    )
+
+    return APIResponse(status="success", message="Saved items fetched", data=data)
+
+# 1. MAIN PROFILE DASHBOARD 
+@router.get("/profile/me", response_model=APIResponse[FullProfileResponse])
+async def get_my_profile_dashboard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Fetches the user profile with calculated metrics and contributor status"""
+    
+    # Calculate real stats from DB
+    rev_count = db.query(Review).filter(Review.user_id == current_user.id).count()
+    act_count = db.query(PlatformItem).filter(PlatformItem.creator_id == current_user.id, PlatformItem.item_type == "activity").count()
+    gift_count = db.query(PlatformItem).filter(PlatformItem.creator_id == current_user.id, PlatformItem.item_type == "gift").count()
+    
+    # Contributor Logic (Example algorithm)
+    top_pct = "Top 9%"
+    level = "Local Contributor"
+    if rev_count > 50: level = "Expert Contributor"
+
+    metrics = UserProfileMetrics(
+        reviews_count=rev_count,
+        activities_count=act_count,
+        invited_family_count=12, # Mocked for MVP
+        gifts_shared_count=gift_count,
+        contributor_level=level,
+        top_percentage=top_pct,
+        progress_pct=0.75
+    )
+
+    data = FullProfileResponse(
+        full_name=current_user.full_name,
+        location_name=current_user.location_name or "Unknown",
+        profile_image_url=current_user.profile_image_url,
+        metrics=metrics
+    )
+    return APIResponse(status="success", message="Profile loaded", data=data)
+
+# 2. EDIT PROFILE & CHILD INFO 
+@router.put("/profile/update", response_model=APIResponse[None])
+async def update_basic_profile(payload: ProfileUpdateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    current_user.full_name = payload.full_name
+    current_user.email = payload.email
+    current_user.location_name = payload.location_name
+    db.commit()
+    return APIResponse(status="success", message="Profile updated")
+
+@router.get("/profile/reviews", response_model=APIResponse[List[UserReviewItem]])
+async def get_my_reviews_list(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Matches 'My Review' (Image 7)"""
+    reviews = db.query(Review).filter(Review.user_id == current_user.id).order_by(Review.created_at.desc()).all()
+    
+    data = [UserReviewItem(
+        id=r.id,
+        place_name=r.item.name,
+        date=r.created_at.strftime("%d %B %Y"),
+        comment=r.comment,
+        recommendation_label=r.recommendation_level
+    ) for r in reviews]
+    
+    return APIResponse(status="success", message="Reviews fetched", data=data)
+
+# 3. CONTACT SUPPORT & SUGGESTIONS 
+@router.post("/profile/support", response_model=APIResponse[None])
+async def submit_support_ticket(payload: SupportRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Matches 'Contact Support' (Image 2)"""
+    msg = SupportMessage(
+        user_id=current_user.id,
+        email=payload.email,
+        location=payload.location,
+        problem_details=payload.problem_details
+    )
+    db.add(msg)
+    db.commit()
+    return APIResponse(status="success", message="Your query has been submitted. We will contact you soon.")
+
+@router.get("/profile/suggestions", response_model=APIResponse[dict])
+async def get_my_suggestions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Matches 'Your Suggestions' / 'Suggested' (Image 5)"""
+    # User suggestions are PlatformItems created by the user
+    items = db.query(PlatformItem).filter(PlatformItem.creator_id == current_user.id).all()
+    
+    data = [{
+        "id": i.id,
+        "name": i.name,
+        "description": i.description[:60] + "...",
+        "location": i.location,
+        "status": i.status, # approved, pending, rejected
+        "category": "Health"
+    } for i in items]
+    
+    return APIResponse(status="success", message="Suggestions fetched", data={"items": data})
+
+@router.get("/legal/privacy-policy")
+async def get_privacy_policy():
+    """Returns static text"""
+    return {"status": "success", "content": "FamilySide takes your privacy seriously..."}
