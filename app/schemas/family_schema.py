@@ -105,3 +105,20 @@ class SearchTabInitResponse(BaseModel):
 
 class SearchHistoryResponse(BaseModel):
     recent_searches: List[str]
+
+class NotificationItem(BaseModel):
+    id: int
+    title: str
+    subtitle: str
+    time_ago: str
+    is_read: bool
+    item_type: Optional[str]
+    item_id: Optional[int]
+
+class NotificationGroup(BaseModel):
+    group_name: str # "Today", "This week", "Last month"
+    notifications: List[NotificationItem]
+
+class NotificationListResponse(BaseModel):
+    unread_count: int
+    groups: List[NotificationGroup]

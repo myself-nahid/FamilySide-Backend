@@ -75,20 +75,22 @@ class PlatformItem(Base):
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
 
-
-# NOTIFICATIONS (Admin Approvals)
 class Notification(Base):
     __tablename__ = "notifications"
     
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    subtitle = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True) # Receiver
     
-    item_type = Column(String, nullable=False)
-    item_id = Column(Integer, nullable=False) 
+    title = Column(String, nullable=False)    # e.g., "New Events added"
+    subtitle = Column(String, nullable=False) # e.g., "A new music class is near you"
+    
+    item_type = Column(String, nullable=True) # activity, event, gift
+    item_id = Column(Integer, nullable=True) 
     
     is_read = Column(Boolean, default=False)
-    created_at = Column(Date, default=func.now())
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User", backref="notifications")
 
 class SavedItem(Base):
     __tablename__ = "saved_items"
