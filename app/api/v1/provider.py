@@ -8,6 +8,12 @@ from app.models.core_data import PlatformItem, Notification
 from app.schemas.auth_schema import APIResponse
 from app.schemas.provider_schema import ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse
 from app.core.utils import calculate_distance_km
+from fastapi import Form, File, UploadFile
+from typing import Optional
+import os
+import shutil
+import json
+
 
 router = APIRouter(prefix="/provider", tags=["Provider App - Home"])
 
@@ -76,3 +82,111 @@ async def get_provider_home_feed(
             top_services=[format_item(i) for i in raw_services]
         )
     )
+
+"""Manage Flow Endpoints (Add/Edit/Delete) for Provider's Own Items - Activities & Events"""
+# 1. LIST OWNED ITEMS
+@router.get("/manage/items", response_model=APIResponse[dict])
+async def get_my_managed_items(
+    item_type: str = "activity", # activity, event, gift
+    page: int = 1,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Returns a paginated list of items owned by the logged-in provider."""
+    query = db.query(PlatformItem).filter(
+        PlatformItem.creator_id == current_user.id,
+        PlatformItem.item_type == item_type
+    )
+    
+    total_count = query.count()
+    items = query.order_by(PlatformItem.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    formatted_items = []
+    for i in items:
+        formatted_items.append(ProviderItemCard(
+            id=i.id,
+            name=i.name,
+            image_url=i.image_url,
+            category_label=i.category.name if i.category else "General",
+            item_type=i.item_type,
+            price=i.price or 0.0,
+            distance_km=0.0, # Provider's own items don't need distance logic
+            age_range="Age: 0-20 years", # Extracted from tags
+            date_label=i.date.strftime("%d %B, %Y") if i.date else None
+        ))
+        
+    return APIResponse(
+        status="success", 
+        message=f"Total {total_count} {item_type}s found", 
+        data={"total": total_count, "items": formatted_items}
+    )
+
+# 2. UPDATE ITEM
+@router.put("/manage/items/{item_id}", response_model=APIResponse[None])
+async def update_provider_item(
+    item_id: int,
+    name: str = Form(...),
+    location: str = Form(...),
+    price: float = Form(...),
+    description: str = Form(...),
+    tags: Optional[str] = Form(None),           # JSON string
+    sub_categories: Optional[str] = Form(None), # JSON string
+    photo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Fetch item and verify ownership
+    item = db.query(PlatformItem).filter(
+        PlatformItem.id == item_id, 
+        PlatformItem.creator_id == current_user.id
+    ).first()
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found or you don't own it")
+
+    # 2. Update Image if new photo provided
+    if photo:
+        UPLOAD_DIR = f"uploads/{item.item_type}s"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        file_path = os.path.join(UPLOAD_DIR, f"update_{item_id}_{photo.filename}")
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        item.image_url = f"/{file_path}"
+
+    # 3. Update Text Fields
+    item.name = name
+    item.location = location
+    item.price = price
+    item.description = description
+    
+    if tags:
+        try: item.tags = json.loads(tags)
+        except: pass
+    if sub_categories:
+        try: item.sub_categories = json.loads(sub_categories)
+        except: pass
+
+    db.commit()
+    return APIResponse(status="success", message="Item updated successfully")
+
+# 3. DELETE ITEM
+@router.delete("/manage/items/{item_id}", response_model=APIResponse[None])
+async def delete_provider_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Permanently removes an item after the user confirms in the UI modal."""
+    item = db.query(PlatformItem).filter(
+        PlatformItem.id == item_id, 
+        PlatformItem.creator_id == current_user.id
+    ).first()
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+        
+    db.delete(item)
+    db.commit()
+    
+    return APIResponse(status="success", message="Item deleted successfully")
