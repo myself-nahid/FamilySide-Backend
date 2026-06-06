@@ -10,6 +10,8 @@ from app.schemas.provider_schema import ProviderHomeHeader, ProviderItemCard, Pr
 from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
 from typing import Optional
+from datetime import datetime
+import random
 import os
 import shutil
 import json
@@ -190,3 +192,195 @@ async def delete_provider_item(
     db.commit()
     
     return APIResponse(status="success", message="Item deleted successfully")
+
+"""create and edit endpoints for provider items (activities/events) - these will be used in the 'Manage' section of the provider app"""
+# Helper to notify Admin
+def notify_admin(db: Session, item: PlatformItem, provider_name: str):
+    new_notif = Notification(
+        title=f"New {item.item_type.capitalize()} Added",
+        subtitle=f"{provider_name} submitted '{item.name}' for approval",
+        item_type=item.item_type,
+        item_id=item.id,
+        is_read=False
+    )
+    db.add(new_notif)
+    db.commit()
+
+# 1. CREATE ACTIVITY
+@router.post("/create/activity", response_model=APIResponse[None])
+async def provider_create_activity(
+    name: str = Form(...),
+    location: str = Form(...),
+    category_id: int = Form(...),
+    price: float = Form(...),
+    description: str = Form(...),
+    website: Optional[str] = Form(None),
+    whatsapp: Optional[str] = Form(None), # Matches "What's App Number"
+    email: Optional[str] = Form(None),
+    instagram: Optional[str] = Form(None), # Matches "Instagram Link"
+    opening_days: Optional[str] = Form(None),
+    opening_hours: Optional[str] = Form(None),
+    sub_categories: str = Form("[]"), 
+    tags: str = Form("[]"),           
+    photo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Handle Image Upload
+    image_url = None
+    if photo:
+        os.makedirs("uploads/activities", exist_ok=True)
+        path = f"uploads/activities/prov_{current_user.id}_{photo.filename}"
+        with open(path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        image_url = f"/{path}"
+
+    # 2. Map all fields to the Model
+    new_item = PlatformItem(
+        item_type="activity",
+        name=name,
+        location=location,
+        category_id=category_id,
+        price=price,
+        description=description,
+        
+        # New mapping
+        website=website,
+        whatsapp=whatsapp,
+        email=email,
+        instagram=instagram,
+        opening_days=opening_days,
+        opening_hours=opening_hours,
+        
+        sub_categories=json.loads(sub_categories),
+        tags=json.loads(tags),
+        image_url=image_url,
+        creator_id=current_user.id,
+        status="pending" 
+    )
+    
+    db.add(new_item)
+    db.commit()
+    db.refresh(new_item)
+
+    # Trigger Admin Notification
+    notify_admin(db, new_item, current_user.full_name)
+
+    return APIResponse(status="success", message="Activity submitted successfully!")
+
+# 2. CREATE EVENT
+@router.post("/create/event", response_model=APIResponse[None])
+async def provider_create_event(
+    name: str = Form(...),
+    location: str = Form(...),          # Matches the top search bar
+    category_id: int = Form(...),
+    price: float = Form(...),           # Matches "Enter amount*"
+    date: str = Form(...),              # Expected: "dd/mm/yyyy"
+    time: str = Form(...),              # Expected: "hh:mm"
+    description: str = Form(...),
+    tags: str = Form("[]"),             # JSON string from multi-select
+    photo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Handle Photo Upload
+    image_url = None
+    if photo:
+        os.makedirs("uploads/events", exist_ok=True)
+        path = f"uploads/events/prov_{current_user.id}_{photo.filename}"
+        with open(path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        image_url = f"/{path}"
+
+    # 2. Parse Date (dd/mm/yyyy) and Time (hh:mm)
+    try:
+        parsed_date = datetime.strptime(date, "%d/%m/%Y").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use dd/mm/yyyy")
+
+    try:
+        # Supports both 24h (14:00) and 12h (02:00 PM) formats
+        if "AM" in time.upper() or "PM" in time.upper():
+            parsed_time = datetime.strptime(time, "%I:%M %p").time()
+        else:
+            parsed_time = datetime.strptime(time, "%H:%M").time()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid time format. Use hh:mm or hh:mm AM/PM")
+
+    # 3. Create Item
+    new_event = PlatformItem(
+        item_type="event",
+        name=name,
+        location=location,
+        category_id=category_id,
+        price=price,
+        date=parsed_date,
+        start_time=parsed_time,
+        description=description,
+        tags=json.loads(tags),
+        image_url=image_url,
+        creator_id=current_user.id,
+        status="pending"
+    )
+    
+    db.add(new_event)
+    db.commit()
+    db.refresh(new_event)
+
+    # 4. Trigger Admin Notification
+    notify_admin(db, new_event, current_user.full_name)
+
+    return APIResponse(status="success", message="Event submitted for approval!")
+
+# 3. CREATE GIFT
+@router.post("/create/gift", response_model=APIResponse[None])
+async def provider_create_gift(
+    name: str = Form(..., alias="gift_name"), # UI Label: Gift Name
+    category_id: int = Form(...),            # UI Label: Category
+    price: float = Form(...),                 # UI Label: Enter amount*
+    description: str = Form(...),             # UI Label: Description
+    tags: str = Form("[]"),                   # UI Label: Tag (multi-select)
+    photo: Optional[UploadFile] = File(None), # UI Label: Add Photos
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Handles the 'Add New Gift' form.
+    Items created here are saved with item_type='gift' and status='pending'.
+    """
+    # 1. Handle File Upload
+    image_url = None
+    if photo:
+        os.makedirs("uploads/gifts", exist_ok=True)
+        path = f"uploads/gifts/prov_{current_user.id}_{photo.filename}"
+        with open(path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        image_url = f"/{path}"
+
+    # 2. Parse Tags JSON
+    try:
+        parsed_tags = json.loads(tags)
+    except:
+        parsed_tags = [tags] if tags else []
+
+    # 3. Create the Gift Item
+    new_gift = PlatformItem(
+        item_type="gift",
+        name=name,
+        category_id=category_id,
+        price=price,
+        description=description,
+        tags=parsed_tags,
+        image_url=image_url,
+        creator_id=current_user.id,
+        status="pending" # Sent to admin for approval
+    )
+    
+    db.add(new_gift)
+    db.commit()
+    db.refresh(new_gift)
+
+    # 4. Notify Admin
+    notify_admin(db, new_gift, current_user.full_name)
+
+    return APIResponse(status="success", message="Gift submitted for admin approval!")
