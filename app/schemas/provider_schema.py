@@ -31,3 +31,30 @@ class ProviderAnalyticsResponse(BaseModel):
     year: int
     chart_data: List[AnalyticsDataPoint]
     suggestion_text: str # For the "Suggestions For You" pink card
+
+class ContributorStats(BaseModel):
+    reviews_count: int
+    activities_count: int
+    invited_family_count: int
+    gifts_shared_count: int
+    contributor_level: str # "Local Contributor"
+    progress_percentage: float # 0.75 for the UI bar
+
+class ProviderProfileResponse(BaseModel):
+    name: str
+    location: str
+    image_url: Optional[str]
+    stats: ContributorStats
+
+class ManagedEventItem(BaseModel):
+    id: int
+    name: str
+    item_type: str
+    location: str
+    date: str
+    time: str
+    image_url: Optional[str]
+
+class ProviderEventsResponse(BaseModel):
+    upcoming: List[ManagedEventItem]
+    completed: List[ManagedEventItem]

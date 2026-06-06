@@ -4,13 +4,13 @@ from sqlalchemy import and_, desc, extract
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
-from app.models.core_data import AnalyticsLog, PlatformItem, Notification
+from app.models.core_data import AnalyticsLog, PlatformItem, Notification, Review
 from app.schemas.auth_schema import APIResponse
-from app.schemas.provider_schema import AnalyticsDataPoint, ProviderAnalyticsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse
+from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderProfileResponse
 from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 import random
 import os
 import shutil
@@ -444,3 +444,115 @@ async def get_provider_analytics(
             suggestion_text=suggestion
         )
     )
+
+"""profile management"""
+# 1. CONTRIBUTOR DASHBOARD
+@router.get("/profile/dashboard", response_model=APIResponse[ProviderProfileResponse])
+async def get_contributor_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Calculate counts
+    reviews = db.query(Review).filter(Review.user_id == current_user.id).count()
+    activities = db.query(PlatformItem).filter(
+        PlatformItem.creator_id == current_user.id, 
+        PlatformItem.item_type == "activity"
+    ).count()
+    gifts = db.query(PlatformItem).filter(
+        PlatformItem.creator_id == current_user.id, 
+        PlatformItem.item_type == "gift"
+    ).count()
+
+    stats = ContributorStats(
+        reviews_count=reviews,
+        activities_count=activities,
+        invited_family_count=12, # Logic for referrals
+        gifts_shared_count=gifts,
+        contributor_level="Local Contributor",
+        progress_percentage=0.85
+    )
+
+    return APIResponse(
+        status="success", message="Dashboard loaded",
+        data=ProviderProfileResponse(
+            name=current_user.full_name,
+            location=current_user.location_name or "Dhaka, Bangladesh",
+            image_url=current_user.profile_image_url,
+            stats=stats
+        )
+    )
+
+# 2. MANAGE EVENTS - UPCOMING VS COMPLETED
+@router.get("/manage/events/status", response_model=APIResponse[ProviderEventsResponse])
+async def get_provider_events_by_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Groups provider events into Upcoming and Completed tabs"""
+    now = date.today()
+    
+    events = db.query(PlatformItem).filter(
+        PlatformItem.creator_id == current_user.id,
+        PlatformItem.item_type == "event"
+    ).all()
+
+    upcoming = []
+    completed = []
+
+    for e in events:
+        item = ManagedEventItem(
+            id=e.id, name=e.name, item_type="Event",
+            location=e.location or "Dhaka, Bangladesh",
+            date=e.date.strftime("%d %B %Y") if e.date else "N/A",
+            time=e.start_time.strftime("%I:%M %p") if e.start_time else "N/A",
+            image_url=e.image_url
+        )
+        
+        # Logic: If date is in the past, it's completed
+        if e.date and e.date < now:
+            completed.append(item)
+        else:
+            upcoming.append(item)
+
+    return APIResponse(
+        status="success", message="Events categorized",
+        data=ProviderEventsResponse(upcoming=upcoming, completed=completed)
+    )
+
+# 3. MY SUGGESTIONS / SUBMISSIONS 
+@router.get("/profile/my-submissions", response_model=APIResponse[dict])
+async def get_my_submissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Matches 'Your Suggestions' (Image 7) showing Admin Approval status"""
+    items = db.query(PlatformItem).filter(PlatformItem.creator_id == current_user.id).all()
+    
+    data = [{
+        "id": i.id,
+        "name": i.name,
+        "description": i.description[:50] + "..." if i.description else "",
+        "location": i.location or "Dhaka, Bangladesh",
+        "status": i.status, # 'approved' (Green in UI), 'pending' (Orange in UI)
+        "category": "Health"
+    } for i in items]
+    
+    return APIResponse(status="success", message="Submissions fetched", data={"items": data})
+
+# 4. MY REVIEWS
+@router.get("/profile/my-reviews", response_model=APIResponse[list])
+async def get_my_reviews(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    reviews = db.query(Review).filter(Review.user_id == current_user.id).all()
+    
+    data = [{
+        "id": r.id,
+        "place_name": r.item.name if r.item else "Unknown",
+        "date": r.created_at.strftime("%d %B %Y"),
+        "comment": r.comment,
+        "recommendation": r.recommendation_level # "Recommended"
+    } for r in reviews]
+    
+    return APIResponse(status="success", message="Reviews fetched", data=data)
