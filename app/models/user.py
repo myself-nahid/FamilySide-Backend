@@ -1,6 +1,6 @@
 import datetime
 from sqlalchemy.sql import func
-from sqlalchemy import Column, Integer, String, Boolean, Date, ForeignKey, Float, Table
+from sqlalchemy import Column, DateTime, Integer, String, Boolean, Date, ForeignKey, Float, Table
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
@@ -48,6 +48,15 @@ class User(Base):
     
     # Provider Specific Relationship 
     social_links = relationship("SocialLink", back_populates="user", cascade="all, delete-orphan")
+
+class PasswordResetOTP(Base):
+    __tablename__ = "password_reset_otps"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, index=True, nullable=False)
+    otp_code = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    is_verified = Column(Boolean, default=False) 
 
 class OTPVerification(Base):
     __tablename__ = "otp_codes"

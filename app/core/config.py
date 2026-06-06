@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     RESET_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("RESET_TOKEN_EXPIRE_MINUTES", 15))
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")
     APPLE_CLIENT_ID: str = os.getenv("APPLE_CLIENT_ID")
+    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME")
+    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD")
+    MAIL_FROM: str = os.getenv("MAIL_FROM")
+    MAIL_PORT: int = int(os.getenv("MAIL_PORT", 587))
+    MAIL_SERVER: str = os.getenv("MAIL_SERVER")
+    MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS", "True").lower() == "true"
+    MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS", "False").lower() == "true"
+    MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME", "FamilySide")
 
     class Config:
         case_sensitive = True

@@ -13,3 +13,4 @@ alembic
 google-auth 
 httpx
 requests
+fastapi-mail

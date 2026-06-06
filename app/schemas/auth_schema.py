@@ -52,15 +52,8 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    token: str 
+    email: EmailStr  
     new_password: str = Field(..., min_length=6, max_length=72)
-
-    @validator("new_password")
-    def password_max_72_bytes(cls, v):
-        if len(v.encode("utf-8")) > 72:
-            raise ValueError("Password cannot exceed 72 bytes in UTF-8 encoding.")
-        return v
-
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., max_length=72)

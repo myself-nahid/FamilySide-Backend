@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.schemas.auth_schema import (
     RefreshTokenRequest, SignUpRequest, LoginRequest, ForgotPasswordRequest, 
@@ -11,6 +13,9 @@ from app.core.security import (
 from app.api.deps import get_db, get_current_user 
 from app.models.user import OTPVerification, User
 from pydantic import BaseModel
+from fastapi import BackgroundTasks
+from app.services.email_service import send_otp_email
+from app.models.user import PasswordResetOTP
 import random
 from app.core.config import settings
 from jose import jwt
@@ -270,61 +275,70 @@ async def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
         )
     )
 
-# 6. FORGOT PASSWORD & RESET PASSWORD
+# 6. FORGOT PASSWORD, VERIFY OTP & RESET PASSWORD
 @router.post("/forgot-password", response_model=APIResponse[None])
-async def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+async def forgot_password(
+    payload: ForgotPasswordRequest, 
+    background_tasks: BackgroundTasks, # Use background task so user doesn't wait
+    db: Session = Depends(get_db)
+):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
-        # Security best practice: Do not reveal if email exists or not
-        return APIResponse(
-            status="success",
-            message="If your email is registered, you will receive a password reset link."
-        )
-    
-    # Generate secure short-lived token
-    reset_token = create_password_reset_token(email=user.email)
-    
-    # TODO: Integrate Email Service (e.g., SendGrid, AWS SES)
-    # send_reset_email(user.email, reset_token)
-    print(f"Mock Email Sent -> Token: {reset_token}")
-    
-    return APIResponse(
-        status="success",
-        message="If your email is registered, you will receive a password reset link."
-    )
+        # Standard security: return success even if user doesn't exist
+        return APIResponse(status="success", message="If registered, an OTP has been sent.")
+
+    # 1. Generate 6-digit OTP
+    otp = f"{random.randint(100000, 999999)}"
+    expiry = datetime.utcnow() + timedelta(minutes=15)
+
+    # 2. Save/Update OTP in DB
+    db.query(PasswordResetOTP).filter(PasswordResetOTP.email == payload.email).delete()
+    db_otp = PasswordResetOTP(email=payload.email, otp_code=otp, expires_at=expiry)
+    db.add(db_otp)
+    db.commit()
+
+    # 3. Send Email in Background
+    background_tasks.add_task(send_otp_email, payload.email, otp)
+
+    return APIResponse(status="success", message="OTP sent to your email.")
+
+@router.post("/verify-otp", response_model=APIResponse[dict])
+async def verify_otp(email: str, otp: str, db: Session = Depends(get_db)):
+    """Matches the 6-digit code screen in UI"""
+    record = db.query(PasswordResetOTP).filter(
+        PasswordResetOTP.email == email,
+        PasswordResetOTP.otp_code == otp
+    ).first()
+
+    if not record or record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    # Mark as verified so reset-password knows the user passed this stage
+    record.is_verified = True
+    db.commit()
+
+    return APIResponse(status="success", message="OTP verified successfully", data={"email": email})
 
 @router.post("/reset-password", response_model=APIResponse[None])
 async def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
-    try:
-        from jose import jwt
-        from app.core.config import settings  # <-- IMPORT SETTINGS HERE
-        
-        # Verify Token using settings
-        payload_data = jwt.decode(payload.token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        email = payload_data.get("sub")
-        token_type = payload_data.get("type")
-        
-        if email is None or token_type != "reset":
-            raise ValueError("Invalid token")
-            
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired password reset token"
-        )
-        
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    # Update password
+    """Final Step: Takes the email and new password"""
+    # Verify the user actually passed the OTP step
+    otp_record = db.query(PasswordResetOTP).filter(
+        PasswordResetOTP.email == payload.email,
+        PasswordResetOTP.is_verified == True
+    ).first()
+
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="Please verify your email via OTP first.")
+
+    user = db.query(User).filter(User.email == payload.email).first()
     user.hashed_password = get_password_hash(payload.new_password)
-    db.commit()
     
-    return APIResponse(
-        status="success",
-        message="Password has been reset successfully. You can now login."
-    )
+    # Cleanup: Delete OTP records after successful reset
+    db.query(PasswordResetOTP).filter(PasswordResetOTP.email == payload.email).delete()
+    db.commit()
+
+    return APIResponse(status="success", message="Password reset successful. You can now login.")
 
 # 7. CHANGE PASSWORD (Protected Route)
 @router.post("/change-password", response_model=APIResponse[None])
@@ -359,26 +373,7 @@ async def change_password(
         message="Password changed successfully."
     )
 
-class VerifyOTPRequest(BaseModel):
-    email: str
-    otp: str
-
-# 8. VERIFY OTP (For Password Reset Flow)
-@router.post("/verify-otp")
-async def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
-    # 1. Query OTP table for this email and code
-    record = db.query(OTPVerification).filter(
-        OTPVerification.email == payload.email,
-        OTPVerification.otp_code == payload.otp
-    ).first()
-    
-    if not record:
-        raise HTTPException(status_code=400, detail="Invalid code")
-    
-    # 2. Return success, frontend then navigates to "Reset Password" screen
-    return {"status": "success", "message": "Code verified"}
-
-# 9. UPGRADE ACCOUNT (Family -> Provider)
+# 8. UPGRADE ACCOUNT (Family -> Provider)
 @router.patch("/account/upgrade-to-provider")
 async def upgrade_to_provider(
     db: Session = Depends(get_db),
@@ -391,7 +386,7 @@ async def upgrade_to_provider(
     db.commit()
     return {"message": "Account upgraded successfully"}
 
-# 10. DELETE ACCOUNT
+# 9. DELETE ACCOUNT
 @router.delete("/account/delete")
 async def delete_account(
     db: Session = Depends(get_db),
