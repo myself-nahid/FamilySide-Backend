@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.schemas.auth_schema import (
     RefreshTokenRequest, SignUpRequest, LoginRequest, ForgotPasswordRequest, 
     ResetPasswordRequest, ChangePasswordRequest, 
-    APIResponse, TokenData
+    APIResponse, SocialLoginRequest, TokenData
 )
 from app.core.security import (
     get_password_hash, verify_password, create_access_token, create_refresh_token, create_password_reset_token
@@ -14,9 +14,15 @@ from pydantic import BaseModel
 import random
 from app.core.config import settings
 from jose import jwt
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+import httpx 
+from jose import jwt as jose_jwt
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+"""signup, login, social login, refresh token, forgot/reset password, change password, admin login"""
+# 1. SIGNUP
 @router.post("/signup", response_model=APIResponse[TokenData])
 async def signup(payload: SignUpRequest, db: Session = Depends(get_db)):
     # 1. Check if user exists
@@ -54,6 +60,7 @@ async def signup(payload: SignUpRequest, db: Session = Depends(get_db)):
         )
     )
 
+# 2. LOGIN (Normal Login)
 @router.post("/login", response_model=APIResponse[TokenData])
 async def login(payload: LoginRequest, db: Session = Depends(get_db)):
     # 1. Find User
@@ -86,6 +93,128 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)):
         )
     )
 
+"""Google and Apple Social Login Helpers"""
+# Mock implementations for development.
+async def verify_google_token(token: str):
+    # DEVELOPMENT MOCK: If send 'test_google_token', it bypasses Google Servers
+    if token == "test_google_token":
+        return {"email": "social_test@gmail.com", "name": "Mishuk Social", "provider_id": "google_123"}
+        
+    try:
+        idinfo = id_token.verify_oauth2_token(
+            token, 
+            google_requests.Request(), 
+            settings.GOOGLE_CLIENT_ID
+        )
+        return {
+            "email": idinfo['email'],
+            "name": idinfo.get('name', idinfo['email'].split('@')[0]),
+            "provider_id": idinfo['sub']
+        }
+    except Exception as e:
+        print(f"Google Auth Error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
+async def verify_apple_token(token: str):
+    # DEVELOPMENT MOCK: If you send 'test_apple_token'
+    if token == "test_apple_token":
+        return {"email": "apple_test@icloud.com", "name": "Apple User", "provider_id": "apple_123"}
+
+    try:
+        payload = jose_jwt.get_unverified_claims(token)
+        
+        # Security check: Ensure the token was actually meant for your app
+        if payload.get("aud") != settings.APPLE_CLIENT_ID:
+             raise ValueError("Token audience mismatch")
+
+        return {
+            "email": payload.get('email'),
+            "name": "Apple User", # Apple only provides name on first login
+            "provider_id": payload.get('sub')
+        }
+    except Exception as e:
+        print(f"Apple Auth Error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid Apple token")
+    
+
+# production solutions    
+# async def verify_google_token(token: str):
+#     try:
+#         # Use settings.GOOGLE_CLIENT_ID instead of a string
+#         idinfo = id_token.verify_oauth2_token(
+#             token, 
+#             google_requests.Request(), 
+#             settings.GOOGLE_CLIENT_ID
+#         )
+#         return {
+#             "email": idinfo['email'],
+#             "name": idinfo.get('name', idinfo['email'].split('@')[0]),
+#             "provider_id": idinfo['sub']
+#         }
+#     except Exception:
+#         raise HTTPException(status_code=401, detail="Invalid Google token")
+
+# async def verify_apple_token(token: str):
+#     try:
+#         # In a full production check, you'd use settings.APPLE_CLIENT_ID 
+#         # to verify the 'aud' (audience) claim of the Apple JWT
+#         payload = jose_jwt.get_unverified_claims(token)
+        
+#         # Security check: Ensure the token was actually meant for your app
+#         if payload.get("aud") != settings.APPLE_CLIENT_ID:
+#              raise ValueError("Token audience mismatch")
+
+#         return {
+#             "email": payload.get('email'),
+#             "name": "Apple User",
+#             "provider_id": payload.get('sub')
+#         }
+#     except Exception:
+#         raise HTTPException(status_code=401, detail="Invalid Apple token")
+
+# 3. SOCIAL LOGIN
+@router.post("/social-login", response_model=APIResponse[TokenData])
+async def social_auth(payload: SocialLoginRequest, db: Session = Depends(get_db)):
+    # 1. Verify the token with the provider
+    if payload.provider == "google":
+        user_data = await verify_google_token(payload.id_token)
+    else:
+        user_data = await verify_apple_token(payload.id_token)
+
+    # 2. Check if user exists
+    user = db.query(User).filter(User.email == user_data["email"]).first()
+
+    if not user:
+        # Create new user if they don't exist
+        user = User(
+            full_name=user_data["name"],
+            email=user_data["email"],
+            auth_provider=payload.provider.value,
+            user_type=payload.user_type.value,
+            onboarding_completed=False,
+            hashed_password=None # Social users don't have a local password
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # 3. Generate our system tokens
+    access_token = create_access_token(subject=user.id)
+    refresh_token = create_refresh_token(subject=user.id)
+
+    return APIResponse(
+        status="success",
+        message=f"Logged in via {payload.provider.value}",
+        data=TokenData(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_id=user.id,
+            name=user.full_name,
+            email=user.email
+        )
+    )
+
+# 4. REFRESH TOKEN
 @router.post("/refresh", response_model=APIResponse[dict])
 async def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
     try:
@@ -108,6 +237,7 @@ async def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_
     except Exception:
         raise HTTPException(status_code=401, detail="Refresh token expired or invalid")
 
+# 5. ADMIN LOGIN
 @router.post("/admin/login", response_model=APIResponse[TokenData])
 async def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
     # 1. Find User
@@ -140,6 +270,7 @@ async def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
         )
     )
 
+# 6. FORGOT PASSWORD & RESET PASSWORD
 @router.post("/forgot-password", response_model=APIResponse[None])
 async def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
@@ -195,6 +326,7 @@ async def reset_password(payload: ResetPasswordRequest, db: Session = Depends(ge
         message="Password has been reset successfully. You can now login."
     )
 
+# 7. CHANGE PASSWORD (Protected Route)
 @router.post("/change-password", response_model=APIResponse[None])
 async def change_password(
     payload: ChangePasswordRequest, 
@@ -231,6 +363,7 @@ class VerifyOTPRequest(BaseModel):
     email: str
     otp: str
 
+# 8. VERIFY OTP (For Password Reset Flow)
 @router.post("/verify-otp")
 async def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
     # 1. Query OTP table for this email and code
@@ -245,6 +378,7 @@ async def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
     # 2. Return success, frontend then navigates to "Reset Password" screen
     return {"status": "success", "message": "Code verified"}
 
+# 9. UPGRADE ACCOUNT (Family -> Provider)
 @router.patch("/account/upgrade-to-provider")
 async def upgrade_to_provider(
     db: Session = Depends(get_db),
@@ -256,3 +390,13 @@ async def upgrade_to_provider(
     current_user.user_type = "provider"
     db.commit()
     return {"message": "Account upgraded successfully"}
+
+# 10. DELETE ACCOUNT
+@router.delete("/account/delete")
+async def delete_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db.delete(current_user)
+    db.commit()
+    return {"message": "Account deleted successfully"}

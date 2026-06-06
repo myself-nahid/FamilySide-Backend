@@ -38,6 +38,15 @@ class LoginRequest(BaseModel):
             raise ValueError("Password cannot exceed 72 bytes in UTF-8 encoding.")
         return v
 
+class SocialAuthProvider(str, Enum):
+    google = "google"
+    apple = "apple"
+
+class SocialLoginRequest(BaseModel):
+    id_token: str
+    provider: SocialAuthProvider
+    user_type: Optional[UserType] = UserType.family # Required for new signups
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 

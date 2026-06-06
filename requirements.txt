@@ -10,3 +10,6 @@ pydantic-settings
 pydantic[email]
 python-multipart
 alembic
+google-auth 
+httpx
+requests
