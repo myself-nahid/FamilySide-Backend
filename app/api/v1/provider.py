@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, desc
+from sqlalchemy import and_, desc, extract
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
-from app.models.core_data import PlatformItem, Notification
+from app.models.core_data import AnalyticsLog, PlatformItem, Notification
 from app.schemas.auth_schema import APIResponse
-from app.schemas.provider_schema import ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse
+from app.schemas.provider_schema import AnalyticsDataPoint, ProviderAnalyticsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse
 from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
 from typing import Optional
@@ -384,3 +384,63 @@ async def provider_create_gift(
     notify_admin(db, new_gift, current_user.full_name)
 
     return APIResponse(status="success", message="Gift submitted for admin approval!")
+
+"""Analytics Endpoints for Provider Dashboard - This will power the line chart and personalized suggestions in the provider app's analytics section"""
+# 1. ANALYTICS DATA
+@router.get("/analytics", response_model=APIResponse[ProviderAnalyticsResponse])
+async def get_provider_analytics(
+    category: str = "Profile Views", 
+    year: int = 2025,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Calculates monthly performance data for the provider's dashboard.
+    Matches Image 1: Category tabs, Year filter, and Line Chart.
+    """
+    if current_user.user_type != "provider":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 1. Map UI Categories to Action Types
+    action_map = {
+        "Profile Views": "profile_view",
+        "User engagement": "item_view",
+        "Total Activities": "item_view" # In a real app, this might count unique items
+    }
+    target_action = action_map.get(category, "profile_view")
+
+    # 2. Generate Chart Data (Months Jan to Dec)
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    chart_points = []
+    
+    for i, month_name in enumerate(months, start=1):
+        # Count actions for this specific month and year
+        count = db.query(AnalyticsLog).filter(
+            AnalyticsLog.provider_id == current_user.id,
+            AnalyticsLog.action_type == target_action,
+            extract('year', AnalyticsLog.created_at) == year,
+            extract('month', AnalyticsLog.created_at) == i
+        ).count()
+        
+        # NOTE: To match your UI's negative values, this logic would compare 
+        # this month vs last month to get a % growth. 
+        # For this MVP, we return the count.
+        chart_points.append(AnalyticsDataPoint(label=month_name, value=float(count)))
+
+    # 3. Personalized Suggestions (Image 1 - Pink Card)
+    # This can be powered by the OpenAI API logic from your project proposal
+    suggestion = (
+        "Users in your area are searching for 'Outdoor Play' 20% more this month. "
+        "Consider adding more weekend slots to your activities to increase engagement."
+    )
+
+    return APIResponse(
+        status="success", 
+        message="Analytics loaded",
+        data=ProviderAnalyticsResponse(
+            category=category,
+            year=year,
+            chart_data=chart_points,
+            suggestion_text=suggestion
+        )
+    )

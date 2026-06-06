@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
 from app.models.core_data import Review
+from app.models.core_data import AnalyticsLog
 import os
 import shutil
 
@@ -480,12 +481,28 @@ async def get_map_pins(
     ]
     return APIResponse(status="success", message="Pins loaded", data=pins)
 
+# Define the helper function 
+def log_analytics(db: Session, provider_id: int, action: str, item_id: int = None):
+    """Saves a record of a user interaction for the analytics chart"""
+    log = AnalyticsLog(provider_id=provider_id, action_type=action, item_id=item_id)
+    db.add(log)
+    db.commit()
+
 # 2. ITEM FULL DETAILS 
 @router.get("/items/{item_id}/details", response_model=APIResponse[ItemDetailFullResponse])
 async def get_item_details(item_id: int, db: Session = Depends(get_db)):
     item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Every time this API is called, we log an 'item_view' for the provider
+    if item.creator_id:
+        log_analytics(
+            db, 
+            provider_id=item.creator_id, 
+            action="item_view", 
+            item_id=item.id
+        )
 
     # Fetch nested lists for the detail page
     events = db.query(PlatformItem).filter(PlatformItem.item_type == "event", PlatformItem.category_id == item.category_id).limit(2).all()

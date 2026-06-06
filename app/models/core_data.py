@@ -149,3 +149,17 @@ class SupportMessage(Base):
     created_at = Column(DateTime, default=func.now())
 
     user = relationship("User")
+
+class AnalyticsLog(Base):
+    """Tracks every view/click for analytics generation"""
+    __tablename__ = "analytics_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    provider_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    item_id = Column(Integer, ForeignKey("platform_items.id", ondelete="CASCADE"), nullable=True)
+    
+    # Action types: 'profile_view', 'item_view', 'whatsapp_click', 'website_click'
+    action_type = Column(String, nullable=False) 
+    created_at = Column(DateTime, default=func.now())
+
+    provider = relationship("User")

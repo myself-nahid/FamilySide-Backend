@@ -21,3 +21,13 @@ class ProviderItemCard(BaseModel):
 class ProviderHomeResponse(BaseModel):
     upcoming_events: List[ProviderItemCard]
     top_services: List[ProviderItemCard]
+
+class AnalyticsDataPoint(BaseModel):
+    label: str  # e.g., "Jan"
+    value: float # e.g., 60.0 or -40.0
+
+class ProviderAnalyticsResponse(BaseModel):
+    category: str # "Profile Views", "User engagement", etc.
+    year: int
+    chart_data: List[AnalyticsDataPoint]
+    suggestion_text: str # For the "Suggestions For You" pink card
