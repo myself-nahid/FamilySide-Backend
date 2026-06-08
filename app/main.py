@@ -10,6 +10,8 @@ from app.api.v1.onboarding import router as onboarding_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.family import router as family_router
 from app.api.v1.provider import router as provider_router
+from fastapi.staticfiles import StaticFiles
+import os
 
 # Define the lifespan of the application
 # @asynccontextmanager
@@ -52,6 +54,13 @@ app.add_middleware(
     allow_methods=["*"],  
     allow_headers=["*"],  
 )
+
+# Create the directory if it doesn't exist to prevent startup errors
+if not os.path.exists("uploads"):
+    os.makedirs("uploads")
+
+# This allows you to visit http://localhost:8015/uploads/profiles/user_3.jpg
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(onboarding_router, prefix="/api/v1")

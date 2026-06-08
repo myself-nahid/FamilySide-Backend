@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS", "True").lower() == "true"
     MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS", "False").lower() == "true"
     MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME", "FamilySide")
+    base_url: str = os.getenv("base_url")
 
     class Config:
         case_sensitive = True

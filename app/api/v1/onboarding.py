@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
+from pathlib import Path
 import os
 import shutil
 
@@ -99,23 +100,28 @@ async def upload_profile_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # For MVP, we save locally. Later, change this to AWS S3 upload.
-    UPLOAD_DIR = "uploads/profiles"
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    # 1. Standardize Directory
+    UPLOAD_DIR = Path("uploads/profiles")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     
+    # 2. Secure Filename
     file_extension = file.filename.split(".")[-1]
     file_name = f"user_{current_user.id}.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, file_name)
+    file_path = UPLOAD_DIR / file_name # Uses correct OS slashes
     
+    # 3. Save File
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    # Update user profile and mark onboarding as complete
-    current_user.profile_image_url = f"/{file_path}"
+    # 4. DATABASE FIX: Always store with forward slashes for URLs
+    # We store the relative path: "uploads/profiles/user_3.jpg"
+    url_path = str(file_path).replace("\\", "/") 
+    
+    current_user.profile_image_url = url_path
     current_user.onboarding_completed = True
     db.commit()
     
-    return APIResponse(status="success", message="Profile image uploaded and onboarding complete!")
+    return APIResponse(status="success", message="Profile image uploaded!")
 
 @router.post("/business/social-links", response_model=APIResponse[None])
 async def setup_business_links(
