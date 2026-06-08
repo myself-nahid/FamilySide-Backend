@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from typing import List, Optional
@@ -25,21 +25,43 @@ import shutil
 router = APIRouter(prefix="/family", tags=["Family App - Home"])
 
 @router.get("/home/header", response_model=APIResponse[HomeHeaderResponse])
-async def get_home_header(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Matches the top section of Image 8: Name, Location, Notification Bell"""
+async def get_home_header(
+    api_request: Request,         
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Matches Image 8: Returns Header stats and absolute Profile Image URL"""
     
-    # Note: For MVP, we mock unread notifications to 3 (as seen in UI) 
-    # until the user notification mapping is fully implemented.
-    unread_count = 3 
+    # 1. Calculate unread notifications
+    unread_count = db.query(Notification).filter(
+        Notification.user_id == current_user.id, 
+        Notification.is_read == False
+    ).count()
     
+    # 2. Extract First Name
     first_name = current_user.full_name.split(" ")[0] if current_user.full_name else "Guest"
     
+    # 3. Construct Absolute Image URL
+    full_image_url = None
+    if current_user.profile_image_url:
+        # If it's already a full link (Social login)
+        if current_user.profile_image_url.startswith("http"):
+            full_image_url = current_user.profile_image_url
+        else:
+            # If it's a local path, use the 'api_request' we defined above
+            base_url = str(api_request.base_url)
+            if "localhost" in base_url or "127.0.0.1" in base_url:
+                base_url = base_url.replace("https://", "http://") 
+            full_image_url = f"{base_url}{current_user.profile_image_url.lstrip('/')}"
+
     return APIResponse(
-        status="success", message="Header loaded",
+        status="success", 
+        message="Header loaded",
         data=HomeHeaderResponse(
             first_name=first_name,
-            location_name=current_user.location_name or "Set your location",
-            unread_notifications=unread_count
+            location_name=current_user.location_name or "Set location",
+            unread_notifications=unread_count,
+            profile_image_url=full_image_url
         )
     )
 

@@ -5,6 +5,7 @@ class HomeHeaderResponse(BaseModel):
     first_name: str
     location_name: str
     unread_notifications: int
+    profile_image_url: Optional[str] = None
 
 class CategoryTab(BaseModel):
     id: int
