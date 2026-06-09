@@ -211,6 +211,8 @@ def notify_admin(db: Session, item: PlatformItem, provider_name: str):
 async def provider_create_activity(
     name: str = Form(...),
     location: str = Form(...),
+    lat: Optional[float] = Form(None), 
+    lng: Optional[float] = Form(None),
     category_id: int = Form(...),
     price: float = Form(...),
     description: str = Form(...),
@@ -240,6 +242,8 @@ async def provider_create_activity(
         item_type="activity",
         name=name,
         location=location,
+        lat=lat, 
+        lng=lng,
         category_id=category_id,
         price=price,
         description=description,
@@ -273,6 +277,8 @@ async def provider_create_activity(
 async def provider_create_event(
     name: str = Form(...),
     location: str = Form(...),          # Matches the top search bar
+    lat: Optional[float] = Form(None),
+    lng: Optional[float] = Form(None),
     category_id: int = Form(...),
     price: float = Form(...),           # Matches "Enter amount*"
     date: str = Form(...),              # Expected: "dd/mm/yyyy"
@@ -312,6 +318,8 @@ async def provider_create_event(
         item_type="event",
         name=name,
         location=location,
+        lat=lat,
+        lng=lng,
         category_id=category_id,
         price=price,
         date=parsed_date,

@@ -108,39 +108,38 @@ async def get_home_feed(
     def process_and_sort_items(items, is_event=False):
         processed_list = []
         for item in items:
-            # Calculate exact distance from user to the item
+            absolute_image_url = get_full_url(api_request, item.image_url)
             dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
             
-            # Extract Age range safely from JSON tags
-            age_range = "0-20 years" # Fallback default
+            # --- IMPROVED DATE LOGIC ---
+            # If item has a specific date, use it. 
+            # Fallback to created_at if no specific date is set.
+            display_date = item.date or item.created_at
+            date_label = display_date.strftime("%d %B, %Y") if display_date else None
+            # ---------------------------
+
+            age_range = "0-20 years"
             if item.tags and isinstance(item.tags, list):
                 age_tags = [t for t in item.tags if "year" in t.lower() or "age" in t.lower()]
                 if age_tags: age_range = age_tags[0]
-
-            # Determine Date Label (Events use specific date, Activities don't)
-            date_label = None
-            if is_event and item.date:
-                date_label = item.date.strftime("%d %b")
-
-            absolute_image_url = get_full_url(api_request, item.image_url)
 
             card = HomeItemCard(
                 id=item.id,
                 item_type=item.item_type,
                 name=item.name,
                 image_url=absolute_image_url,
-                category_name=item.category.name if item.category else "Uncategorized",
+                category_name=item.category.name if item.category else "General",
                 price=item.price or 0.0,
-                distance_km=dist,
+                distance_km=dist, # Will show a number if coordinates exist in DB
                 age_range=age_range,
-                date_label=date_label,
+                date_label=date_label, # Now returns a string instead of null
                 is_recommended=True,
                 is_saved=(item.id in saved_item_ids)
             )
             
             processed_list.append({
                 "card": card, 
-                "raw_distance": dist if dist is not None else 9999.0, # Push items without location to the back
+                "raw_distance": dist if dist is not None else 9999.0,
                 "raw_price": item.price or 0.0,
                 "raw_date": item.created_at or datetime.min
             })
