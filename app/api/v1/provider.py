@@ -233,7 +233,7 @@ async def provider_create_activity(
         path = f"uploads/activities/prov_{current_user.id}_{photo.filename}"
         with open(path, "wb") as buffer:
             shutil.copyfileobj(photo.file, buffer)
-        image_url = f"/{path}"
+        image_url = path.replace("\\", "/")
 
     # 2. Map all fields to the Model
     new_item = PlatformItem(

@@ -19,6 +19,7 @@ from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
 from app.models.core_data import Review
 from app.models.core_data import AnalyticsLog
+from app.core.utils import get_full_url
 import os
 import shutil
 
@@ -67,6 +68,7 @@ async def get_home_header(
 
 @router.get("/home/feed", response_model=APIResponse[HomeFeedResponse])
 async def get_home_feed(
+    api_request: Request,
     search: Optional[str] = None,         # From the Search Bar
     category_id: Optional[int] = None,    # From the Category Pill buttons
     sort_by: Optional[str] = "distance",  # Options: distance, price, newest
@@ -120,11 +122,13 @@ async def get_home_feed(
             if is_event and item.date:
                 date_label = item.date.strftime("%d %b")
 
+            absolute_image_url = get_full_url(api_request, item.image_url)
+
             card = HomeItemCard(
                 id=item.id,
                 item_type=item.item_type,
                 name=item.name,
-                image_url=item.image_url,
+                image_url=absolute_image_url,
                 category_name=item.category.name if item.category else "Uncategorized",
                 price=item.price or 0.0,
                 distance_km=dist,
