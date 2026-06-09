@@ -392,6 +392,7 @@ async def get_items_by_sub_category(
 
 @router.get("/items/search", response_model=APIResponse[dict])
 async def search_and_filter_items(
+    api_request: Request,
     # Use Depends for complex query parameters
     params: SearchFilterParams = Depends(),
     item_type: str = "activity", 
@@ -434,8 +435,11 @@ async def search_and_filter_items(
     processed_list = []
 
     for item in raw_items:
+        absolute_image_url = get_full_url(api_request, item.image_url)
         # A. Calculate Distance
         dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        display_date = item.date or item.created_at
+        date_label = display_date.strftime("%d %B, %Y") if display_date else None
         
         # Filter by Distance Range (Modal 1)
         if params.distance_range:
@@ -462,11 +466,12 @@ async def search_and_filter_items(
             id=item.id,
             item_type=item.item_type,
             name=item.name,
-            image_url=item.image_url,
+            image_url=absolute_image_url,
             category_name=item.category.name if item.category else "General",
             price=item.price or 0.0,
             distance_km=dist,
             age_range=params.child_age or "0-20 years",
+            date_label=date_label,
             is_recommended=True,
             is_saved=False # Check against SavedItem table here
         )
