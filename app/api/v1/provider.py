@@ -106,6 +106,7 @@ async def get_provider_home_feed(
 # 1. LIST OWNED ITEMS
 @router.get("/manage/items", response_model=APIResponse[dict])
 async def get_my_managed_items(
+    api_request: Request,
     item_type: str = "activity", # activity, event, gift
     page: int = 1,
     limit: int = 10,
@@ -126,7 +127,7 @@ async def get_my_managed_items(
         formatted_items.append(ProviderItemCard(
             id=i.id,
             name=i.name,
-            image_url=i.image_url,
+            image_url=get_full_url(api_request, i.image_url) if i.image_url else None,
             category_label=i.category.name if i.category else "General",
             item_type=i.item_type,
             price=i.price or 0.0,
@@ -145,49 +146,56 @@ async def get_my_managed_items(
 @router.put("/manage/items/{item_id}", response_model=APIResponse[None])
 async def update_provider_item(
     item_id: int,
-    name: str = Form(...),
-    location: str = Form(...),
-    price: float = Form(...),
-    description: str = Form(...),
-    tags: Optional[str] = Form(None),           # JSON string
-    sub_categories: Optional[str] = Form(None), # JSON string
+    name: str = Form(...),            # Matches "Event Name"
+    price: float = Form(...),         # Matches "Price" logic
+    # JSON strings from the UI chips
+    sub_categories: str = Form("[]"), # Matches "Category (multi-select)"
+    tags: str = Form("[]"),           # Matches "Child Age" and "Distance"
+    # Optional Photo
     photo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. Fetch item and verify ownership
+    # 1. Fetch item and check ownership
     item = db.query(PlatformItem).filter(
         PlatformItem.id == item_id, 
         PlatformItem.creator_id == current_user.id
     ).first()
     
     if not item:
-        raise HTTPException(status_code=404, detail="Item not found or you don't own it")
+        raise HTTPException(status_code=404, detail="Item not found or unauthorized")
 
-    # 2. Update Image if new photo provided
+    # 2. Handle New Photo Upload (if provided)
     if photo:
         UPLOAD_DIR = f"uploads/{item.item_type}s"
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_path = os.path.join(UPLOAD_DIR, f"update_{item_id}_{photo.filename}")
+        
+        file_extension = photo.filename.split(".")[-1]
+        file_name = f"edit_{item_id}_{datetime.utcnow().timestamp()}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+        
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(photo.file, buffer)
-        item.image_url = f"/{file_path}"
+        
+        # Save path with forward slashes for the URL helper
+        item.image_url = f"/{file_path}".replace("\\", "/")
 
-    # 3. Update Text Fields
+    # 3. Update Text and Numeric Fields
     item.name = name
-    item.location = location
     item.price = price
-    item.description = description
     
-    if tags:
-        try: item.tags = json.loads(tags)
-        except: pass
-    if sub_categories:
-        try: item.sub_categories = json.loads(sub_categories)
-        except: pass
+    # 4. Parse and Update JSONB Fields (Chips)
+    try:
+        item.sub_categories = json.loads(sub_categories)
+        item.tags = json.loads(tags)
+    except Exception:
+        # Fallback if the frontend sends plain strings instead of JSON arrays
+        item.sub_categories = [sub_categories]
+        item.tags = [tags]
 
     db.commit()
-    return APIResponse(status="success", message="Item updated successfully")
+    
+    return APIResponse(status="success", message="Activity updated successfully")
 
 # 3. DELETE ITEM
 @router.delete("/manage/items/{item_id}", response_model=APIResponse[None])
