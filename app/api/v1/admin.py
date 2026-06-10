@@ -770,25 +770,29 @@ async def create_activity(
     
     # Image Upload
     photo: Optional[UploadFile] = File(None),
+    image_url: Optional[UploadFile] = File(None),
     
     # Dependencies
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     # 1. Handle File Upload (If photo is provided)
+    # Accept either `photo` or `image_url` as the uploaded file field (some clients use `image_url`)
+    upload_file = photo or image_url
     saved_image_path = None
-    if photo:
+    if upload_file:
         UPLOAD_DIR = "uploads/activities"
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        
+
         # Create a unique filename
-        file_extension = photo.filename.split(".")[-1]
+        file_extension = upload_file.filename.split(".")[-1]
         file_name = f"activity_{datetime.utcnow().timestamp()}.{file_extension}"
         file_path = os.path.join(UPLOAD_DIR, file_name)
-        
+
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(photo.file, buffer)
-        saved_image_path = f"/{file_path}"
+            shutil.copyfileobj(upload_file.file, buffer)
+        # Normalize path separators so URLs are consistent across platforms
+        saved_image_path = f"/{file_path}".replace("\\", "/")
 
     # 2. Parse JSON strings back to Python lists
     parsed_sub_categories = []
@@ -824,6 +828,16 @@ async def create_activity(
     
     db.add(new_activity)
     db.commit()
+    try:
+        db.refresh(new_activity)
+    except Exception:
+        pass
+    # Refresh to ensure any DB defaults/triggers are loaded into the instance
+    try:
+        db.refresh(new_activity)
+    except Exception:
+        # If refresh fails (older SQLAlchemy dialects or SQLite quirks), ignore gracefully
+        pass
     
     return APIResponse(status="success", message="Activity created successfully with photo!")
 
@@ -1010,20 +1024,22 @@ async def create_event(
     sub_categories: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
+    image_url: Optional[UploadFile] = File(None),
     
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     # 1. Handle File Upload
+    upload_file = photo or image_url
     saved_image_path = None
-    if photo:
+    if upload_file:
         UPLOAD_DIR = "uploads/events"
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_extension = photo.filename.split(".")[-1]
+        file_extension = upload_file.filename.split(".")[-1]
         file_path = os.path.join(UPLOAD_DIR, f"event_{datetime.utcnow().timestamp()}.{file_extension}")
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(photo.file, buffer)
-        saved_image_path = f"/{file_path}"
+            shutil.copyfileobj(upload_file.file, buffer)
+        saved_image_path = f"/{file_path}".replace("\\", "/")
 
     # 2. Parse JSON fields
     import json
@@ -1083,6 +1099,10 @@ async def create_event(
     
     db.add(new_event)
     db.commit()
+    try:
+        db.refresh(new_event)
+    except Exception:
+        pass
     
     return APIResponse(status="success", message="Event created successfully!")
 
@@ -1225,20 +1245,22 @@ async def create_gift(
     sub_categories: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
+    image_url: Optional[UploadFile] = File(None),
     
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     # 1. Handle File Upload
+    upload_file = photo or image_url
     saved_image_path = None
-    if photo:
+    if upload_file:
         UPLOAD_DIR = "uploads/gifts"
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_extension = photo.filename.split(".")[-1]
+        file_extension = upload_file.filename.split(".")[-1]
         file_path = os.path.join(UPLOAD_DIR, f"gift_{datetime.utcnow().timestamp()}.{file_extension}")
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(photo.file, buffer)
-        saved_image_path = f"/{file_path}"
+            shutil.copyfileobj(upload_file.file, buffer)
+        saved_image_path = f"/{file_path}".replace("\\", "/")
 
     # 2. Parse JSON lists (Sub-categories and Tags)
     import json
@@ -1281,6 +1303,10 @@ async def create_gift(
     
     db.add(new_gift)
     db.commit()
+    try:
+        db.refresh(new_gift)
+    except Exception:
+        pass
     
     return APIResponse(status="success", message="Gift created successfully!")
 
