@@ -7,7 +7,7 @@ from app.models.user import User
 from app.models.core_data import AnalyticsLog, PlatformItem, Notification, Review
 from app.schemas.auth_schema import APIResponse
 from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderProfileResponse
-from app.core.utils import calculate_distance_km
+from app.core.utils import calculate_distance_km, get_full_url
 from fastapi import Form, File, UploadFile
 from typing import Optional
 from datetime import datetime, date
@@ -59,6 +59,7 @@ async def get_provider_header(
 
 @router.get("/home/feed", response_model=APIResponse[ProviderHomeResponse])
 async def get_provider_home_feed(
+    api_request: Request,
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
@@ -68,7 +69,8 @@ async def get_provider_home_feed(
     raw_events = db.query(PlatformItem).filter(
         PlatformItem.creator_id == current_user.id,
         PlatformItem.item_type == "event",
-        PlatformItem.status == "approved"
+        # Allow owner to see pending and approved items
+        PlatformItem.status.in_(["approved", "pending"]) 
     ).order_by(PlatformItem.date.asc()).limit(3).all()
 
     # 2. Fetch top services (Activities) owned by this provider
@@ -76,14 +78,14 @@ async def get_provider_home_feed(
     raw_services = db.query(PlatformItem).filter(
         PlatformItem.creator_id == current_user.id,
         PlatformItem.item_type == "activity",
-        PlatformItem.status == "approved"
+        PlatformItem.status.in_(["approved", "pending"])
     ).order_by(desc(PlatformItem.created_at)).limit(3).all()
 
     def format_item(item):
         return ProviderItemCard(
             id=item.id,
             name=item.name,
-            image_url=item.image_url,
+            image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
             category_label=item.category.name if item.category else "Birthday",
             item_type=item.item_type,
             price=item.price or 0.0,
