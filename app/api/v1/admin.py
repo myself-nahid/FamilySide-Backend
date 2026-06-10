@@ -662,6 +662,7 @@ This section includes all endpoints related to managing activities, including li
 # 4.1 GET ALL ACTIVITIES (Paginated + Searchable + Filter by Creator Type)
 @router.get("/activities", response_model=APIResponse[dict])
 async def get_activities_paginated(
+    api_request: Request,
     page: int = 1,
     limit: int = 10,
     search: Optional[str] = None,
@@ -691,6 +692,7 @@ async def get_activities_paginated(
         activity_list.append(ActivityListItem(
             id=activity.id,
             name=activity.name,
+            image_url=get_full_url(api_request, activity.image_url) if activity.image_url else None,
             created_by=creator_label,
             category=activity.category.name if activity.category else "Uncategorized",
             location=activity.location or "N/A",
@@ -706,6 +708,7 @@ async def get_activities_paginated(
 # 4.2 VIEW ACTIVITY DETAILS 
 @router.get("/activities/{activity_id}", response_model=APIResponse[ActivityDetailResponse])
 async def get_activity_detail(
+    api_request: Request,
     activity_id: int,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
@@ -728,7 +731,7 @@ async def get_activity_detail(
     detail = ActivityDetailResponse(
         id=activity.id,
         name=activity.name,
-        image_url=activity.image_url,
+        image_url=get_full_url(api_request, activity.image_url) if activity.image_url else None,
         description=activity.description,
         website=activity.website,
         location=activity.location,

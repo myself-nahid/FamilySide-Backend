@@ -162,6 +162,7 @@ class ItemReviewDetailResponse(BaseModel):
 class ActivityListItem(BaseModel):
     id: int
     name: str
+    image_url: Optional[str]
     created_by: str   # e.g., "Provider", "User", "Admin"
     category: str
     location: str
