@@ -106,7 +106,7 @@ async def get_dashboard_overview(api_request: Request, db: Session = Depends(get
     # A. Recent Flagged Items
     raw_flagged = db.query(PlatformItem).filter(PlatformItem.status == "flagged").order_by(PlatformItem.created_at.desc()).limit(4).all()
     recent_flagged_list = [
-        FlaggedItemListItem(id=item.id, name=item.name, item_type=item.item_type.capitalize(), time_ago="1 hr ago")
+        FlaggedItemListItem(id=item.id, name=item.name, image_url=get_full_url(api_request, item.image_url) if item.image_url else None, item_type=item.item_type.capitalize(), time_ago="1 hr ago")
         for item in raw_flagged
     ]
 
