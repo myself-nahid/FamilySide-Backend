@@ -914,6 +914,7 @@ This section includes all endpoints related to managing events, including listin
 # 5.1 GET ALL EVENTS (Paginated + Searchable + Filter by Creator Type)
 @router.get("/events", response_model=APIResponse[dict])
 async def get_events_paginated(
+    api_request: Request,
     page: int = 1,
     limit: int = 10,
     search: Optional[str] = None,
@@ -942,6 +943,7 @@ async def get_events_paginated(
         event_list.append(EventListItem(
             id=event.id,
             name=event.name,
+            image_url=get_full_url(api_request, event.image_url) if event.image_url else None,
             created_by=creator_label,
             category=event.category.name if event.category else "Uncategorized",
             location=event.location or "N/A",
