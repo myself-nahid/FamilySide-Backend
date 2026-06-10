@@ -373,7 +373,7 @@ async def get_users_paginated(
     Returns a paginated list of all system users. 
     Supports full search queries and strict administrative filtering.
     """
-    query = db.query(User)
+    query = db.query(User).filter(User.id != admin.id)
     
     # Apply Filters
     if user_type and user_type != "all":
