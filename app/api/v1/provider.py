@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc, extract
 
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/provider", tags=["Provider App - Home"])
 
 @router.get("/home/header", response_model=APIResponse[ProviderHomeHeader])
 async def get_provider_header(
+    api_request: Request,
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
@@ -33,10 +34,24 @@ async def get_provider_header(
         Notification.is_read == False
     ).count()
 
+    # 3. Construct Absolute Image URL
+    full_image_url = None
+    if current_user.profile_image_url:
+        # If it's already a full link (Social login)
+        if current_user.profile_image_url.startswith("http"):
+            full_image_url = current_user.profile_image_url
+        else:
+            # If it's a local path, use the 'api_request' we defined above
+            base_url = str(api_request.base_url)
+            if "localhost" in base_url or "127.0.0.1" in base_url:
+                base_url = base_url.replace("https://", "http://") 
+            full_image_url = f"{base_url}{current_user.profile_image_url.lstrip('/')}"
+
     return APIResponse(
         status="success", message="Header loaded",
         data=ProviderHomeHeader(
             name=current_user.full_name,
+            profile_image_url=full_image_url,
             location=current_user.location_name or "Dhaka, Bangladesh",
             unread_notifications=unread
         )

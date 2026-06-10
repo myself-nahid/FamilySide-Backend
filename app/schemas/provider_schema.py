@@ -4,6 +4,7 @@ from datetime import date
 
 class ProviderHomeHeader(BaseModel):
     name: str
+    profile_image_url: Optional[str]
     location: str
     unread_notifications: int
 
