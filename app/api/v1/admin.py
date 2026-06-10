@@ -1,9 +1,10 @@
 from alembic.environment import Optional
 from alembic.util import status
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db, get_current_admin
+from app.core.utils import get_full_url
 from app.models.user import User, Child
 from app.models.core_data import PlatformItem, Category
 from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
@@ -58,7 +59,7 @@ def calculate_trend(db: Session, query_base, date_field) -> TrendMetric:
 
 # 1.1 Dashboard Overview (Top Cards + Donut Chart + Bottom Lists)
 @router.get("/dashboard/overview", response_model=APIResponse[DashboardOverviewResponse])
-async def get_dashboard_overview(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+async def get_dashboard_overview(api_request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     """
     Returns the complete dashboard overview data including top stats, 
     donut chart metrics, and recent bottom tables.
@@ -124,7 +125,8 @@ async def get_dashboard_overview(db: Session = Depends(get_db), admin: User = De
     upcoming_events_list = [
         UpcomingEventListItem(
             id=event.id, 
-            name=event.name, 
+            name=event.name,
+            image_url=get_full_url(api_request, event.image_url) if event.image_url else None,
             date=event.date.strftime("%d %b %Y") if event.date else "N/A",
             time=event.start_time.strftime("%I:%M %p") if event.start_time else "N/A"
         )

@@ -63,6 +63,7 @@ class PendingApprovalListItem(BaseModel):
 class UpcomingEventListItem(BaseModel):
     id: int
     name: str
+    image_url: Optional[str]
     date: str
     time: str
 
