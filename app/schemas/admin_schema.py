@@ -226,6 +226,7 @@ class EventDetailResponse(BaseModel):
 class GiftListItem(BaseModel):
     id: int
     name: str
+    image_url: Optional[str]
     created_by: str   
     category: str
     location: str

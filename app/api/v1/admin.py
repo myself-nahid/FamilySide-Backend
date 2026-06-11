@@ -961,6 +961,7 @@ async def get_events_paginated(
 # 5.2 VIEW EVENT DETAILS 
 @router.get("/events/{event_id}", response_model=APIResponse[EventDetailResponse])
 async def get_event_detail(
+    api_request: Request,
     event_id: int,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
@@ -990,7 +991,7 @@ async def get_event_detail(
     detail = EventDetailResponse(
         id=event.id,
         name=event.name,
-        image_url=event.image_url,
+        image_url=get_full_url(api_request, event.image_url) if event.image_url else None,
         description=event.description,
         website=event.website,
         location=event.location,
@@ -1155,6 +1156,7 @@ This section includes all endpoints related to managing gifts, including listing
 # 6.1 GET ALL GIFTS (Paginated + Searchable + Filter by Creator Type)
 @router.get("/gifts", response_model=APIResponse[dict])
 async def get_gifts_paginated(
+    api_request: Request,
     page: int = 1,
     limit: int = 10,
     search: Optional[str] = None,
@@ -1183,6 +1185,7 @@ async def get_gifts_paginated(
         gift_list.append(GiftListItem(
             id=gift.id,
             name=gift.name,
+            image_url=get_full_url(api_request, gift.image_url) if gift.image_url else None,
             created_by=creator_label,
             category=gift.category.name if gift.category else "Uncategorized",
             location=gift.location or "N/A",
@@ -1199,6 +1202,7 @@ async def get_gifts_paginated(
 # 6.2 VIEW GIFT DETAILS 
 @router.get("/gifts/{gift_id}", response_model=APIResponse[GiftDetailResponse])
 async def get_gift_detail(
+    api_request: Request,
     gift_id: int,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
@@ -1228,7 +1232,7 @@ async def get_gift_detail(
     detail = GiftDetailResponse(
         id=gift.id,
         name=gift.name,
-        image_url=gift.image_url,
+        image_url=get_full_url(api_request, gift.image_url) if gift.image_url else None,
         description=gift.description,
         website=gift.website or "www.familyside.com",
         location=gift.location,
