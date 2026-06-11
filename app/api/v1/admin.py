@@ -26,6 +26,7 @@ from app.models.core_data import Category, SubCategory, Tag
 from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem
 from app.models.core_data import Notification
 from app.core.security import get_password_hash, verify_password
+from typing import List
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 
@@ -1399,6 +1400,12 @@ async def toggle_category_status(cat_id: int, db: Session = Depends(get_db), adm
     db.commit()
     return APIResponse(status="success", message=f"Category {'activated' if cat.is_active else 'blocked'}")
 
+@router.get("/categories/search", response_model=APIResponse[List[TaxonomyResponseItem]])
+async def search_categories(search: str, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    categories = db.query(Category).filter(Category.name.ilike(f"%{search}%")).all()
+    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active) for c in categories]
+    return APIResponse(status="success", message="Categories search results", data=items)
+
 
 # 7.2 SUB-CATEGORY MANAGEMENT
 @router.get("/sub-categories", response_model=APIResponse[dict])
@@ -1438,6 +1445,15 @@ async def toggle_sub_category_status(sub_id: int, db: Session = Depends(get_db),
     db.commit()
     return APIResponse(status="success", message=f"Sub-Category {'activated' if sub.is_active else 'blocked'}")
 
+@router.get("/sub-categories/search", response_model=APIResponse[List[TaxonomyResponseItem]])
+async def search_sub_categories(search: str, category_id: Optional[int] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    query = db.query(SubCategory).filter(SubCategory.name.ilike(f"%{search}%"))
+    if category_id:
+        query = query.filter(SubCategory.category_id == category_id)
+    sub_cats = query.all()
+    items = [TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats]
+    return APIResponse(status="success", message="Sub-Categories search results", data=items)
+
 
 # 7.3 TAG MANAGEMENT
 @router.get("/tags", response_model=APIResponse[dict])
@@ -1474,6 +1490,13 @@ async def toggle_tag_status(tag_id: int, db: Session = Depends(get_db), admin: U
     tag.is_active = not tag.is_active
     db.commit()
     return APIResponse(status="success", message=f"Tag {'activated' if tag.is_active else 'blocked'}")
+
+# search tags
+@router.get("/tags/search", response_model=APIResponse[List[TaxonomyResponseItem]])
+async def search_tags(search: str, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    tags = db.query(Tag).filter(Tag.name.ilike(f"%{search}%")).all()
+    items = [TaxonomyResponseItem(id=t.id, name=t.name, is_active=t.is_active) for t in tags]
+    return APIResponse(status="success", message="Tags search results", data=items)
 
 
 """
