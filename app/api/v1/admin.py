@@ -749,6 +749,7 @@ async def get_activity_detail(
 # 4.3 CREATE ACTIVITY
 @router.post("/activities", response_model=APIResponse[None])
 async def create_activity(
+    request: Request,
     # Core fields
     name: str = Form(...),
     location: str = Form(...),
@@ -770,29 +771,30 @@ async def create_activity(
     
     # Image Upload
     photo: Optional[UploadFile] = File(None),
-    image_url: Optional[UploadFile] = File(None),
     
     # Dependencies
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    # 1. Handle File Upload (If photo is provided)
-    # Accept either `photo` or `image_url` as the uploaded file field (some clients use `image_url`)
-    upload_file = photo or image_url
+    # 1. Handle File Upload or Plain Text URL
+    form = await request.form()
+    upload_file = form.get("photo") or form.get("image_url")
     saved_image_path = None
-    if upload_file:
-        UPLOAD_DIR = "uploads/activities"
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    if upload_file is not None:
+        if hasattr(upload_file, "filename") and upload_file.filename:
+            UPLOAD_DIR = "uploads/activities"
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-        # Create a unique filename
-        file_extension = upload_file.filename.split(".")[-1]
-        file_name = f"activity_{datetime.utcnow().timestamp()}.{file_extension}"
-        file_path = os.path.join(UPLOAD_DIR, file_name)
+            # Create a unique filename
+            file_extension = upload_file.filename.split(".")[-1]
+            file_name = f"activity_{datetime.utcnow().timestamp()}.{file_extension}"
+            file_path = os.path.join(UPLOAD_DIR, file_name)
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(upload_file.file, buffer)
-        # Normalize path separators so URLs are consistent across platforms
-        saved_image_path = f"/{file_path}".replace("\\", "/")
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(upload_file.file, buffer)
+            saved_image_path = f"/{file_path}".replace("\\", "/")
+        else:
+            saved_image_path = str(upload_file).strip() or None
 
     # 2. Parse JSON strings back to Python lists
     parsed_sub_categories = []
@@ -1018,41 +1020,61 @@ async def create_event(
     email: Optional[str] = Form(None),
     instagram: Optional[str] = Form(None),
     
-    # Dates and times are accepted as strings from the UI
-    date: Optional[str] = Form(None),         # Expected format: "16/04/2026" or "2026-04-16"
-    start_time: Optional[str] = Form(None),   # Expected format: "10:00 AM" or "10:00"
-    end_time: Optional[str] = Form(None),     # Expected format: "09:00 PM" or "21:00"
+    # Dates and times
+    date: Optional[str] = Form(None),         
+    start_time: Optional[str] = Form(None),   
+    end_time: Optional[str] = Form(None),     
     
+    # JSON Arrays
     sub_categories: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
+    
+    # --- FIXED IMAGE HANDLING ---
     photo: Optional[UploadFile] = File(None),
-    image_url: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None),
     
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    # 1. Handle File Upload
-    upload_file = photo or image_url
+    # 1. Handle File Upload OR Text URL
     saved_image_path = None
-    if upload_file:
+    
+    # Priority 1: A physical file was uploaded via the 'photo' key
+    if photo and photo.filename:
         UPLOAD_DIR = "uploads/events"
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_extension = upload_file.filename.split(".")[-1]
-        file_path = os.path.join(UPLOAD_DIR, f"event_{datetime.utcnow().timestamp()}.{file_extension}")
+        
+        file_extension = photo.filename.split(".")[-1]
+        file_name = f"event_{datetime.utcnow().timestamp()}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+        
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(upload_file.file, buffer)
+            shutil.copyfileobj(photo.file, buffer)
+            
+        # Format the path with forward slashes for the database
         saved_image_path = f"/{file_path}".replace("\\", "/")
+        
+    # Priority 2: A text URL was provided via the 'image_url' key
+    elif image_url and image_url.strip():
+        saved_image_path = image_url.strip()
 
-    # 2. Parse JSON fields
-    import json
+
+    # 2. Parse JSON fields (Sub-categories and Tags)
     parsed_sub = []
     parsed_tags = []
+    
     if sub_categories:
-        try: parsed_sub = json.loads(sub_categories)
-        except: parsed_sub = [sub_categories]
+        try: 
+            parsed_sub = json.loads(sub_categories)
+        except: 
+            parsed_sub = [sub_categories]
+            
     if tags:
-        try: parsed_tags = json.loads(tags)
-        except: parsed_tags = [tags]
+        try: 
+            parsed_tags = json.loads(tags)
+        except: 
+            parsed_tags = [tags]
+
 
     # 3. Parse Dates and Times safely
     parsed_date = None
@@ -1094,20 +1116,15 @@ async def create_event(
         end_time=parsed_end,
         sub_categories=parsed_sub,
         tags=parsed_tags,
-        image_url=saved_image_path,
+        image_url=saved_image_path,  
         creator_id=admin.id,
         status="approved"
     )
     
     db.add(new_event)
     db.commit()
-    try:
-        db.refresh(new_event)
-    except Exception:
-        pass
     
     return APIResponse(status="success", message="Event created successfully!")
-
 
 # 5.4 DELETE EVENT
 @router.delete("/events/{event_id}", response_model=APIResponse[None])
@@ -1231,6 +1248,7 @@ async def get_gift_detail(
 # 6.3 CREATE GIFT
 @router.post("/gifts", response_model=APIResponse[None])
 async def create_gift(
+    request: Request,
     name: str = Form(...),
     location: str = Form(...),
     category_id: int = Form(...),
@@ -1247,22 +1265,25 @@ async def create_gift(
     sub_categories: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
-    image_url: Optional[UploadFile] = File(None),
     
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    # 1. Handle File Upload
-    upload_file = photo or image_url
+    # 1. Handle File Upload or Plain Text URL
+    form = await request.form()
+    upload_file = form.get("photo") or form.get("image_url")
     saved_image_path = None
-    if upload_file:
-        UPLOAD_DIR = "uploads/gifts"
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_extension = upload_file.filename.split(".")[-1]
-        file_path = os.path.join(UPLOAD_DIR, f"gift_{datetime.utcnow().timestamp()}.{file_extension}")
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(upload_file.file, buffer)
-        saved_image_path = f"/{file_path}".replace("\\", "/")
+    if upload_file is not None:
+        if hasattr(upload_file, "filename") and upload_file.filename:
+            UPLOAD_DIR = "uploads/gifts"
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            file_extension = upload_file.filename.split(".")[-1]
+            file_path = os.path.join(UPLOAD_DIR, f"gift_{datetime.utcnow().timestamp()}.{file_extension}")
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(upload_file.file, buffer)
+            saved_image_path = f"/{file_path}".replace("\\", "/")
+        else:
+            saved_image_path = str(upload_file).strip() or None
 
     # 2. Parse JSON lists (Sub-categories and Tags)
     import json
