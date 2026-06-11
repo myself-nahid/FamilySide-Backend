@@ -1506,6 +1506,7 @@ async def search_tags(search: str, db: Session = Depends(get_db), admin: User = 
 # 8 ADMIN SETTINGS (Profile & Security)
 @router.get("/settings/profile", response_model=APIResponse[AdminProfileResponse])
 async def get_admin_profile(
+    api_request: Request,
     admin: User = Depends(get_current_admin)
 ):
     """
@@ -1513,6 +1514,7 @@ async def get_admin_profile(
     """
     detail = AdminProfileResponse(
         name=admin.full_name,
+        image_url=get_full_url(api_request, admin.profile_image_url) if admin.profile_image_url else None,
         email=admin.email,
         phone_number=admin.phone_number
     )

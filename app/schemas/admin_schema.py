@@ -273,5 +273,6 @@ class AdminProfileUpdateRequest(BaseModel):
 
 class AdminProfileResponse(BaseModel):
     name: str
+    image_url: Optional[str] = None
     email: str
     phone_number: Optional[str] = None
