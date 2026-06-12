@@ -61,7 +61,8 @@ async def signup(payload: SignUpRequest, db: Session = Depends(get_db)):
             refresh_token=refresh_token,
             user_id=new_user.id,
             name=new_user.full_name,
-            email=new_user.email
+            email=new_user.email,
+            user_type=new_user.user_type
         )
     )
 
