@@ -72,6 +72,7 @@ class TokenData(BaseModel):
     user_id: int
     name: str
     email: str
+    user_type: UserType
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str

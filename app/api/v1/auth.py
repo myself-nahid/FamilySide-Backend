@@ -94,7 +94,8 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)):
             refresh_token=refresh_token,
             user_id=user.id,
             name=user.full_name,
-            email=user.email
+            email=user.email,
+            user_type=user.user_type
         )
     )
 
