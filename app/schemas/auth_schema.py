@@ -64,6 +64,14 @@ class ChangePasswordRequest(BaseModel):
         if len(v.encode("utf-8")) > 72:
             raise ValueError("Password cannot exceed 72 bytes in UTF-8 encoding.")
         return v
+    
+class VerifySignupOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+class VerifyforgetpasswordOTPRequest(BaseModel):
+    email: str
+    otp: str
 
 class TokenData(BaseModel):
     access_token: str
@@ -73,6 +81,8 @@ class TokenData(BaseModel):
     name: str
     email: str
     user_type: UserType
+    is_email_verified: bool       
+    onboarding_completed: bool
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str

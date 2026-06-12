@@ -5,16 +5,16 @@ from sqlalchemy.orm import Session
 from app.schemas.auth_schema import (
     RefreshTokenRequest, SignUpRequest, LoginRequest, ForgotPasswordRequest, 
     ResetPasswordRequest, ChangePasswordRequest, 
-    APIResponse, SocialLoginRequest, TokenData
+    APIResponse, SocialLoginRequest, TokenData, VerifySignupOTPRequest, VerifyforgetpasswordOTPRequest
 )
 from app.core.security import (
     get_password_hash, verify_password, create_access_token, create_refresh_token, create_password_reset_token
 )
 from app.api.deps import get_db, get_current_user 
-from app.models.user import OTPVerification, User
+from app.models.user import EmailVerificationOTP, OTPVerification, User
 from pydantic import BaseModel
 from fastapi import BackgroundTasks
-from app.services.email_service import send_otp_email
+from app.services.email_service import send_otp_email, send_signup_otp_email
 from app.models.user import PasswordResetOTP
 import random
 from app.core.config import settings
@@ -27,78 +27,155 @@ from jose import jwt as jose_jwt
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 """signup, login, social login, refresh token, forgot/reset password, change password, admin login"""
-# 1. SIGNUP
-@router.post("/signup", response_model=APIResponse[TokenData])
-async def signup(payload: SignUpRequest, db: Session = Depends(get_db)):
-    # 1. Check if user exists
-    user_exists = db.query(User).filter(User.email == payload.email).first()
-    if user_exists:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User with this email already exists."
-        )
+# 1. SIGNUP (Sends OTP, Returns NO Tokens)
+@router.post("/signup", response_model=APIResponse[dict])
+async def signup(payload: SignUpRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     
-    # 2. Create User
+    # 1. Check if user exists
+    existing_user = db.query(User).filter(User.email == payload.email).first()
+    
+    if existing_user:
+        # Scenario B: User exists and IS verified
+        if existing_user.is_email_verified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="An account with this email already exists. Please log in."
+            )
+        else:
+            # Scenario A: User exists but IS NOT verified. 
+            # We update their details (in case they made a typo in their name/password previously)
+            existing_user.full_name = payload.name
+            existing_user.hashed_password = get_password_hash(payload.password)
+            existing_user.user_type = payload.user_type
+            db.commit()
+            
+            # Generate a fresh OTP
+            otp = f"{random.randint(100000, 999999)}"
+            expiry = datetime.utcnow() + timedelta(minutes=15)
+            
+            # Delete old OTPs and save the new one
+            db.query(EmailVerificationOTP).filter(EmailVerificationOTP.email == payload.email).delete()
+            db.add(EmailVerificationOTP(email=payload.email, otp_code=otp, expires_at=expiry))
+            db.commit()
+            
+            # Resend Email
+            background_tasks.add_task(send_signup_otp_email, payload.email, otp)
+            
+            return APIResponse(
+                status="success",
+                message="A new OTP has been sent to your email for verification.",
+                data={"email": payload.email}
+            )
+
+    # 2. Create Brand New User (if doesn't exist at all)
     new_user = User(
         full_name=payload.name,
         email=payload.email,
         hashed_password=get_password_hash(payload.password),
         user_type=payload.user_type,
-        auth_provider="local"
+        auth_provider="local",
+        is_email_verified=False # Must verify first
     )
     db.add(new_user)
     db.commit()
-    db.refresh(new_user)
+
+    # Generate and save OTP
+    otp = f"{random.randint(100000, 999999)}"
+    expiry = datetime.utcnow() + timedelta(minutes=15)
     
-    # 3. Generate Token
-    access_token = create_access_token(subject=new_user.id)
-    refresh_token = create_refresh_token(subject=new_user.id)
+    db.query(EmailVerificationOTP).filter(EmailVerificationOTP.email == payload.email).delete()
+    db.add(EmailVerificationOTP(email=payload.email, otp_code=otp, expires_at=expiry))
+    db.commit()
+
+    # Send Email
+    background_tasks.add_task(send_signup_otp_email, payload.email, otp)
+    
     return APIResponse(
         status="success",
-        message="Account created successfully",
+        message="Account created. An OTP has been sent to your email for verification.",
+        data={"email": payload.email}
+    )
+
+# 2. VERIFY SIGNUP (Validates OTP, Returns Tokens)
+@router.post("/verify-signup", response_model=APIResponse[TokenData])
+async def verify_signup_otp(payload: VerifySignupOTPRequest, db: Session = Depends(get_db)):
+    record = db.query(EmailVerificationOTP).filter(
+        EmailVerificationOTP.email == payload.email,
+        EmailVerificationOTP.otp_code == payload.otp
+    ).first()
+
+    if not record or record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Mark as verified
+    user.is_email_verified = True
+    db.delete(record)
+    db.commit()
+
+    # Generate Tokens NOW
+    access_token = create_access_token(subject=user.id)
+    refresh_token = create_refresh_token(subject=user.id)
+
+    return APIResponse(
+        status="success",
+        message="Email verified successfully. Please complete your onboarding.",
         data=TokenData(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            user_id=new_user.id,
-            name=new_user.full_name,
-            email=new_user.email,
-            user_type=new_user.user_type
+            access_token=access_token, refresh_token=refresh_token,
+            user_id=user.id, name=user.full_name, email=user.email,
+            user_type=user.user_type, is_email_verified=user.is_email_verified,
+            onboarding_completed=user.onboarding_completed
         )
     )
 
-# 2. LOGIN (Normal Login)
+# 3. LOGIN (Checks Verification & Onboarding)
 @router.post("/login", response_model=APIResponse[TokenData])
-async def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    # 1. Find User
+async def login(payload: LoginRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not user.hashed_password:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     
-    # 2. Verify Password
     if not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    # SECURITY CHECK 1: Is email verified?
+    if not user.is_email_verified:
+        # Resend OTP automatically
+        otp = f"{random.randint(100000, 999999)}"
+        expiry = datetime.utcnow() + timedelta(minutes=15)
+        db.query(EmailVerificationOTP).filter(EmailVerificationOTP.email == payload.email).delete()
+        db.add(EmailVerificationOTP(email=payload.email, otp_code=otp, expires_at=expiry))
+        db.commit()
+        background_tasks.add_task(send_signup_otp_email, payload.email, otp)
+
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Email not verified. A new OTP has been sent to your email."
         )
-    
-    # 3. Generate Token
+
+    # Generate Tokens
     access_token = create_access_token(subject=user.id)
     refresh_token = create_refresh_token(subject=user.id)
+
+    # SECURITY CHECK 2: Is onboarding completed?
+    message = "Login successful"
+    if not user.onboarding_completed:
+        message = "Please complete the onboarding first."
+
     return APIResponse(
         status="success",
-        message="Login successful",
+        message=message,
         data=TokenData(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            user_id=user.id,
-            name=user.full_name,
-            email=user.email,
-            user_type=user.user_type
+            access_token=access_token, refresh_token=refresh_token,
+            user_id=user.id, name=user.full_name, email=user.email,
+            user_type=user.user_type, is_email_verified=user.is_email_verified,
+            onboarding_completed=user.onboarding_completed
         )
     )
+
 
 """Google and Apple Social Login Helpers"""
 # Mock implementations for development.
@@ -180,44 +257,37 @@ async def verify_apple_token(token: str):
 #         raise HTTPException(status_code=401, detail="Invalid Apple token")
 
 # 3. SOCIAL LOGIN
+# 4. SOCIAL LOGIN (Auto-Verified)
 @router.post("/social-login", response_model=APIResponse[TokenData])
 async def social_auth(payload: SocialLoginRequest, db: Session = Depends(get_db)):
-    # 1. Verify the token with the provider
-    if payload.provider == "google":
-        user_data = await verify_google_token(payload.id_token)
-    else:
-        user_data = await verify_apple_token(payload.id_token)
+    if payload.provider == "google": user_data = await verify_google_token(payload.id_token)
+    else: user_data = await verify_apple_token(payload.id_token)
 
-    # 2. Check if user exists
     user = db.query(User).filter(User.email == user_data["email"]).first()
 
     if not user:
-        # Create new user if they don't exist
         user = User(
-            full_name=user_data["name"],
-            email=user_data["email"],
-            auth_provider=payload.provider.value,
-            user_type=payload.user_type.value,
-            onboarding_completed=False,
-            hashed_password=None # Social users don't have a local password
+            full_name=user_data["name"], email=user_data["email"],
+            auth_provider=payload.provider.value, user_type=payload.user_type.value,
+            onboarding_completed=False, hashed_password=None,
+            is_email_verified=True # Social logins are automatically trusted!
         )
         db.add(user)
         db.commit()
         db.refresh(user)
 
-    # 3. Generate our system tokens
-    access_token = create_access_token(subject=user.id)
-    refresh_token = create_refresh_token(subject=user.id)
+    message = f"Logged in via {payload.provider.value}"
+    if not user.onboarding_completed:
+        message = "Please complete the onboarding first."
 
     return APIResponse(
-        status="success",
-        message=f"Logged in via {payload.provider.value}",
+        status="success", message=message,
         data=TokenData(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            user_id=user.id,
-            name=user.full_name,
-            email=user.email
+            access_token=create_access_token(subject=user.id),
+            refresh_token=create_refresh_token(subject=user.id),
+            user_id=user.id, name=user.full_name, email=user.email,
+            user_type=user.user_type, is_email_verified=True,
+            onboarding_completed=user.onboarding_completed
         )
     )
 
@@ -305,11 +375,12 @@ async def forgot_password(
     return APIResponse(status="success", message="OTP sent to your email.")
 
 @router.post("/verify-otp", response_model=APIResponse[dict])
-async def verify_otp(email: str, otp: str, db: Session = Depends(get_db)):
+async def verify_otp(payload: VerifyforgetpasswordOTPRequest, db: Session = Depends(get_db)):
     """Matches the 6-digit code screen in UI"""
+    
     record = db.query(PasswordResetOTP).filter(
-        PasswordResetOTP.email == email,
-        PasswordResetOTP.otp_code == otp
+        PasswordResetOTP.email == payload.email,
+        PasswordResetOTP.otp_code == payload.otp
     ).first()
 
     if not record or record.expires_at < datetime.utcnow():
@@ -319,7 +390,11 @@ async def verify_otp(email: str, otp: str, db: Session = Depends(get_db)):
     record.is_verified = True
     db.commit()
 
-    return APIResponse(status="success", message="OTP verified successfully", data={"email": email})
+    return APIResponse(
+        status="success",
+        message="OTP verified successfully",
+        data={"email": payload.email}
+    )
 
 @router.post("/reset-password", response_model=APIResponse[None])
 async def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):

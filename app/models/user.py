@@ -21,6 +21,7 @@ class User(Base):
     hashed_password = Column(String, nullable=True)
     auth_provider = Column(String, default="local")
     is_admin = Column(Boolean, default=False) # Only True for admin accounts
+    is_email_verified = Column(Boolean, default=False)
     
     # Distinguish between regular user and service provider 
     user_type = Column(String, default="family") # "family" or "provider"
@@ -48,6 +49,14 @@ class User(Base):
     
     # Provider Specific Relationship 
     social_links = relationship("SocialLink", back_populates="user", cascade="all, delete-orphan")
+
+class EmailVerificationOTP(Base):
+    __tablename__ = "email_verification_otps"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, index=True, nullable=False)
+    otp_code = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
 
 class PasswordResetOTP(Base):
     __tablename__ = "password_reset_otps"

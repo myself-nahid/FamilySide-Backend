@@ -32,3 +32,21 @@ async def send_otp_email(email_to: str, otp: str):
     )
     fm = FastMail(conf)
     await fm.send_message(message)
+
+async def send_signup_otp_email(email_to: str, otp: str):
+    html = f"""
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2 style="color: #F05A5E;">Welcome to FamilySide!</h2>
+        <p>Your email verification code is:</p>
+        <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #333;">{otp}</div>
+        <p>This code will expire in 15 minutes.</p>
+    </div>
+    """
+    message = MessageSchema(
+        subject="FamilySide Email Verification",
+        recipients=[email_to],
+        body=html,
+        subtype=MessageType.html
+    )
+    fm = FastMail(conf)
+    await fm.send_message(message)
