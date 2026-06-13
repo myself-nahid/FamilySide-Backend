@@ -131,6 +131,32 @@ async def verify_signup_otp(payload: VerifySignupOTPRequest, db: Session = Depen
         )
     )
 
+# resend OTP endpoint (in case user didn't receive email or OTP expired)
+@router.post("/resend-otp", response_model=APIResponse[None])
+async def resend_otp(payload: VerifySignupOTPRequest, db: Session = Depends(get_db)):
+    # Check if the email exists
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # Generate new OTP
+    otp = f"{random.randint(100000, 999999)}"
+    expiry = datetime.utcnow() + timedelta(minutes=15)
+
+    # Update the OTP record
+    db.query(EmailVerificationOTP).filter(EmailVerificationOTP.email == payload.email).delete()
+    db.add(EmailVerificationOTP(email=payload.email, otp_code=otp, expires_at=expiry))
+    db.commit()
+
+    # Send the new OTP via email
+    await send_signup_otp_email(payload.email, otp)
+
+    return APIResponse(
+        status="success",
+        message="A new OTP has been sent to your email.",
+        data=None
+    )
+
 # 3. LOGIN (Checks Verification & Onboarding)
 @router.post("/login", response_model=APIResponse[TokenData])
 async def login(payload: LoginRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
