@@ -13,7 +13,6 @@ from app.core.security import (
 from app.api.deps import get_db, get_current_user 
 from app.models.user import EmailVerificationOTP, OTPVerification, User
 from pydantic import BaseModel
-from fastapi import BackgroundTasks
 from app.services.email_service import send_otp_email, send_signup_otp_email
 from app.models.user import PasswordResetOTP
 import random
@@ -366,10 +365,13 @@ async def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
         message="Admin login successful",
         data=TokenData(
             access_token=access_token,
-            refresh_token=refresh_token, 
-            user_id=user.id,             
+            refresh_token=refresh_token,
+            user_id=user.id,
             name=user.full_name,
-            email=user.email
+            email=user.email,
+            user_type=user.user_type,
+            is_email_verified=user.is_email_verified,
+            onboarding_completed=user.onboarding_completed,
         )
     )
 
