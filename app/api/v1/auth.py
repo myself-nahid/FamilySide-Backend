@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.schemas.auth_schema import (
     RefreshTokenRequest, SignUpRequest, LoginRequest, ForgotPasswordRequest, 
     ResetPasswordRequest, ChangePasswordRequest, 
-    APIResponse, SocialLoginRequest, TokenData, VerifySignupOTPRequest, VerifyforgetpasswordOTPRequest
+    APIResponse, SocialLoginRequest, TokenData, VerifySignupOTPRequest, VerifyforgetpasswordOTPRequest, resendotpRequest
 )
 from app.core.security import (
     get_password_hash, verify_password, create_access_token, create_refresh_token, create_password_reset_token
@@ -133,7 +133,7 @@ async def verify_signup_otp(payload: VerifySignupOTPRequest, db: Session = Depen
 
 # resend OTP endpoint (in case user didn't receive email or OTP expired)
 @router.post("/resend-otp", response_model=APIResponse[None])
-async def resend_otp(payload: VerifySignupOTPRequest, db: Session = Depends(get_db)):
+async def resend_otp(payload: resendotpRequest, db: Session = Depends(get_db)):
     # Check if the email exists
     user = db.query(User).filter(User.email == payload.email).first()
     if not user:
@@ -389,9 +389,9 @@ async def forgot_password(
     otp = f"{random.randint(100000, 999999)}"
     expiry = datetime.utcnow() + timedelta(minutes=15)
 
-    # 2. Save/Update OTP in DB
+    # 2. Save/Update OTP in DB (delete old and create new with is_verified=False)
     db.query(PasswordResetOTP).filter(PasswordResetOTP.email == payload.email).delete()
-    db_otp = PasswordResetOTP(email=payload.email, otp_code=otp, expires_at=expiry)
+    db_otp = PasswordResetOTP(email=payload.email, otp_code=otp, expires_at=expiry, is_verified=False)
     db.add(db_otp)
     db.commit()
 
@@ -421,6 +421,33 @@ async def verify_otp(payload: VerifyforgetpasswordOTPRequest, db: Session = Depe
         message="OTP verified successfully",
         data={"email": payload.email}
     )
+
+@router.post("/resend-password-reset-otp", response_model=APIResponse[None])
+async def resend_password_reset_otp(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """Resend OTP for password reset flow (deletes old OTP and creates new one)"""
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user:
+        # Security: return success even if user doesn't exist
+        return APIResponse(status="success", message="If registered, a new OTP has been sent.")
+
+    # 1. Generate new 6-digit OTP
+    otp = f"{random.randint(100000, 999999)}"
+    expiry = datetime.utcnow() + timedelta(minutes=15)
+
+    # 2. Delete old OTP records and create new one (reset is_verified flag)
+    db.query(PasswordResetOTP).filter(PasswordResetOTP.email == payload.email).delete()
+    db_otp = PasswordResetOTP(email=payload.email, otp_code=otp, expires_at=expiry, is_verified=False)
+    db.add(db_otp)
+    db.commit()
+
+    # 3. Send Email in Background
+    background_tasks.add_task(send_otp_email, payload.email, otp)
+
+    return APIResponse(status="success", message="A new OTP has been sent to your email.")
 
 @router.post("/reset-password", response_model=APIResponse[None])
 async def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
