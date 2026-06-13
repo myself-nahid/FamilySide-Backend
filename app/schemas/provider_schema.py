@@ -89,3 +89,7 @@ class ProviderItemDetailResponse(BaseModel):
     
     image_url: Optional[str]
     status: str
+
+class ProviderDropdownItem(BaseModel):
+    id: int
+    name: str

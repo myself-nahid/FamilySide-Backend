@@ -4,12 +4,12 @@ from sqlalchemy import and_, desc, extract
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
-from app.models.core_data import AnalyticsLog, PlatformItem, Notification, Review
+from app.models.core_data import AnalyticsLog, Category, PlatformItem, Notification, Review, SubCategory
 from app.schemas.auth_schema import APIResponse
-from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderItemDetailResponse, ProviderProfileResponse
+from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderDropdownItem, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderItemDetailResponse, ProviderProfileResponse
 from app.core.utils import calculate_distance_km, get_full_url
 from fastapi import Form, File, UploadFile
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime, date
 import random
 import os
@@ -361,6 +361,40 @@ async def provider_create_activity(
     notify_admin(db, new_item, current_user.full_name)
 
     return APIResponse(status="success", message="Activity submitted successfully!")
+
+# DROPDOWN HELPERS (For Create/Edit Forms)
+@router.get("/categories/active", response_model=APIResponse[List[ProviderDropdownItem]])
+async def get_active_categories_for_dropdown(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Called when the "Add Activity/Event" screen loads.
+    Populates the 'Category' dropdown.
+    """
+    categories = db.query(Category).filter(Category.is_active == True).all()
+    
+    data = [ProviderDropdownItem(id=c.id, name=c.name) for c in categories]
+    return APIResponse(status="success", message="Categories loaded", data=data)
+
+
+@router.get("/categories/{category_id}/sub-categories", response_model=APIResponse[List[ProviderDropdownItem]])
+async def get_active_sub_categories_for_dropdown(
+    category_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Called IMMEDIATELY after the user selects a Category from the dropdown.
+    Populates the 'Sub-category' chips below it.
+    """
+    sub_categories = db.query(SubCategory).filter(
+        SubCategory.category_id == category_id,
+        SubCategory.is_active == True
+    ).all()
+    
+    data = [ProviderDropdownItem(id=s.id, name=s.name) for s in sub_categories]
+    return APIResponse(status="success", message="Sub-categories loaded", data=data)
 
 # 2. CREATE EVENT
 @router.post("/create/event", response_model=APIResponse[None])
