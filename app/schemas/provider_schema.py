@@ -59,3 +59,33 @@ class ManagedEventItem(BaseModel):
 class ProviderEventsResponse(BaseModel):
     upcoming: List[ManagedEventItem]
     completed: List[ManagedEventItem]
+
+class ProviderItemDetailResponse(BaseModel):
+    id: int
+    item_type: str
+    name: str
+    location: Optional[str]
+    category_id: Optional[int]
+    price: float
+    description: Optional[str]
+    
+    # Contact Info
+    website: Optional[str]
+    whatsapp: Optional[str]
+    email: Optional[str]
+    instagram: Optional[str]
+    
+    # Activity specific
+    opening_days: Optional[str]
+    opening_hours: Optional[str]
+    
+    # Event specific
+    date: Optional[str]       # Format: YYYY-MM-DD
+    time: Optional[str]       # Format: HH:MM AM/PM
+    
+    # JSON Arrays for the UI Chips/Multi-select
+    sub_categories: List[str] = []
+    tags: List[str] = []
+    
+    image_url: Optional[str]
+    status: str

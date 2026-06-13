@@ -6,7 +6,7 @@ from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.core_data import AnalyticsLog, PlatformItem, Notification, Review
 from app.schemas.auth_schema import APIResponse
-from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderProfileResponse
+from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderItemDetailResponse, ProviderProfileResponse
 from app.core.utils import calculate_distance_km, get_full_url
 from fastapi import Form, File, UploadFile
 from typing import Optional
@@ -142,16 +142,72 @@ async def get_my_managed_items(
         data={"total": total_count, "items": formatted_items}
     )
 
+# 1.5 GET SPECIFIC ITEM FOR EDITING (Pre-fill Form)
+@router.get("/manage/items/{item_id}", response_model=APIResponse[ProviderItemDetailResponse])
+async def get_provider_item_for_edit(
+    api_request: Request,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Fetches the raw data of a single item owned by the provider 
+    so the frontend can pre-fill the "Edit" form.
+    """
+    item = db.query(PlatformItem).filter(
+        PlatformItem.id == item_id,
+        PlatformItem.creator_id == current_user.id
+    ).first()
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found or you don't own it")
+
+    # Safely handle JSONB lists
+    sub_cats = item.sub_categories if isinstance(item.sub_categories, list) else []
+    tags_list = item.tags if isinstance(item.tags, list) else []
+
+    data = ProviderItemDetailResponse(
+        id=item.id,
+        item_type=item.item_type,
+        name=item.name,
+        location=item.location,
+        category_id=item.category_id,
+        price=item.price or 0.0,
+        description=item.description,
+        website=item.website,
+        whatsapp=item.whatsapp,
+        email=item.email,
+        instagram=item.instagram,
+        opening_days=item.opening_days,
+        opening_hours=item.opening_hours,
+        # Format date and time so the frontend input fields can read them easily
+        date=item.date.strftime("%Y-%m-%d") if item.date else None,
+        time=item.start_time.strftime("%I:%M %p") if item.start_time else None,
+        sub_categories=sub_cats,
+        tags=tags_list,
+        image_url=get_full_url(api_request, item.image_url),
+        status=item.status
+    )
+    
+    return APIResponse(status="success", message="Item data fetched", data=data)
+
 # 2. UPDATE ITEM
 @router.put("/manage/items/{item_id}", response_model=APIResponse[None])
 async def update_provider_item(
     item_id: int,
-    name: str = Form(...),            # Matches "Event Name"
-    price: float = Form(...),         # Matches "Price" logic
-    # JSON strings from the UI chips
-    sub_categories: str = Form("[]"), # Matches "Category (multi-select)"
-    tags: str = Form("[]"),           # Matches "Child Age" and "Distance"
-    # Optional Photo
+    name: str = Form(...),            
+    price: float = Form(...),         
+    description: str = Form(...),     # Added description (required)
+    location: Optional[str] = Form(None),
+    
+    # Optional fields for all types
+    date: Optional[str] = Form(None),       # Added Date
+    time: Optional[str] = Form(None),       # Added Time
+    opening_days: Optional[str] = Form(None),
+    opening_hours: Optional[str] = Form(None),
+    
+    sub_categories: str = Form("[]"), 
+    tags: str = Form("[]"),           
     photo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -166,36 +222,45 @@ async def update_provider_item(
         raise HTTPException(status_code=404, detail="Item not found or unauthorized")
 
     # 2. Handle New Photo Upload (if provided)
-    if photo:
+    if photo and photo.filename:
         UPLOAD_DIR = f"uploads/{item.item_type}s"
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        
         file_extension = photo.filename.split(".")[-1]
-        file_name = f"edit_{item_id}_{datetime.utcnow().timestamp()}.{file_extension}"
-        file_path = os.path.join(UPLOAD_DIR, file_name)
-        
+        file_path = os.path.join(UPLOAD_DIR, f"edit_{item_id}_{datetime.utcnow().timestamp()}.{file_extension}")
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(photo.file, buffer)
-        
-        # Save path with forward slashes for the URL helper
         item.image_url = f"/{file_path}".replace("\\", "/")
 
     # 3. Update Text and Numeric Fields
     item.name = name
     item.price = price
+    item.description = description
+    if location: item.location = location
+    if opening_days: item.opening_days = opening_days
+    if opening_hours: item.opening_hours = opening_hours
     
+    # Parse Date and Time if provided
+    if date:
+        try: item.date = datetime.strptime(date, "%Y-%m-%d").date()
+        except: pass
+    if time:
+        try: 
+            if "AM" in time.upper() or "PM" in time.upper():
+                item.start_time = datetime.strptime(time, "%I:%M %p").time()
+            else:
+                item.start_time = datetime.strptime(time, "%H:%M").time()
+        except: pass
+
     # 4. Parse and Update JSONB Fields (Chips)
-    try:
-        item.sub_categories = json.loads(sub_categories)
-        item.tags = json.loads(tags)
-    except Exception:
-        # Fallback if the frontend sends plain strings instead of JSON arrays
-        item.sub_categories = [sub_categories]
-        item.tags = [tags]
+    try: item.sub_categories = json.loads(sub_categories)
+    except: item.sub_categories = [sub_categories]
+        
+    try: item.tags = json.loads(tags)
+    except: item.tags = [tags]
 
     db.commit()
     
-    return APIResponse(status="success", message="Activity updated successfully")
+    return APIResponse(status="success", message=f"{item.item_type.capitalize()} updated successfully")
 
 # 3. DELETE ITEM
 @router.delete("/manage/items/{item_id}", response_model=APIResponse[None])
