@@ -9,6 +9,7 @@ class Category(Base):
     __tablename__ = "categories"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    image_url = Column(String, nullable=True)
     is_active = Column(Boolean, default=True) 
     
     # Relationship to Sub-Categories
@@ -18,6 +19,7 @@ class SubCategory(Base):
     __tablename__ = "sub_categories"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    image_url = Column(String, nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"))
     is_active = Column(Boolean, default=True)
     
@@ -27,6 +29,7 @@ class Tag(Base):
     __tablename__ = "tags"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    image_url = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
 
 
