@@ -1376,6 +1376,13 @@ async def get_categories(page: int = 1, limit: int = 20, search: Optional[str] =
     items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url) if c.image_url else None) for c in categories]
     return APIResponse(status="success", message="Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
+# get category without paginations
+@router.get("/categories/all", response_model=APIResponse[List[TaxonomyResponseItem]])
+async def get_all_categories(api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    categories = db.query(Category).all()
+    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url) if c.image_url else None) for c in categories]
+    return APIResponse(status="success", message="Categories fetched", data=items)
+
 @router.post("/categories", response_model=APIResponse[None])
 async def create_category(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     form = await request.form()
