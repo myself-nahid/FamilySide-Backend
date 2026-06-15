@@ -688,3 +688,32 @@ async def get_my_reviews(
     } for r in reviews]
     
     return APIResponse(status="success", message="Reviews fetched", data=data)
+
+
+# provider profile update
+@router.put("/profile/update", response_model=APIResponse[None])
+async def update_provider_profile(
+    api_request: Request,
+    name: Optional[str] = Form(None),
+    location: Optional[str] = Form(None),
+    profile_image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if name:
+        current_user.full_name = name
+    if location:
+        current_user.location_name = location
+
+    # Handle profile image upload
+    if profile_image and profile_image.filename:
+        os.makedirs("uploads/profile_images", exist_ok=True)
+        file_extension = profile_image.filename.split(".")[-1]
+        file_path = f"uploads/profile_images/user_{current_user.id}_{datetime.utcnow().timestamp()}.{file_extension}"
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(profile_image.file, buffer)
+        current_user.profile_image_url = f"/{file_path}".replace("\\", "/")
+
+    db.commit()
+    
+    return APIResponse(status="success", message="Profile updated successfully")
