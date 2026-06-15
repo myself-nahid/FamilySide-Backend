@@ -1452,6 +1452,21 @@ async def search_categories(search: str, api_request: Request = None, db: Sessio
     items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url) if c.image_url else None) for c in categories]
     return APIResponse(status="success", message="Categories search results", data=items)
 
+# delete category (soft delete by blocking and deactivating all related sub-categories)
+@router.delete("/categories/{cat_id}", response_model=APIResponse[None])
+async def delete_category(cat_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    cat = db.query(Category).filter(Category.id == cat_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    # Soft delete: Block the category and all its sub-categories
+    cat.is_active = False
+    for sub in cat.subcategories:
+        sub.is_active = False
+    
+    db.commit()
+    return APIResponse(status="success", message="Category and its sub-categories have been blocked successfully")
+
 
 # 7.2 SUB-CATEGORY MANAGEMENT
 @router.get("/sub-categories", response_model=APIResponse[dict])
@@ -1540,6 +1555,15 @@ async def search_sub_categories(search: str, category_id: Optional[int] = None, 
     items = [TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url) if s.image_url else None, category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats]
     return APIResponse(status="success", message="Sub-Categories search results", data=items)
 
+# delete sub-category
+@router.delete("/sub-categories/{sub_id}", response_model=APIResponse[None])
+async def delete_sub_category(sub_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    sub = db.query(SubCategory).filter(SubCategory.id == sub_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Sub-Category not found")
+    db.delete(sub)
+    db.commit()
+    return APIResponse(status="success", message="Sub-Category deleted successfully")
 
 # 7.3 TAG MANAGEMENT
 @router.get("/tags", response_model=APIResponse[dict])
