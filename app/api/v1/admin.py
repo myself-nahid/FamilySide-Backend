@@ -1461,7 +1461,7 @@ async def delete_category(cat_id: int, db: Session = Depends(get_db), admin: Use
     
     # Soft delete: Block the category and all its sub-categories
     cat.is_active = False
-    for sub in cat.subcategories:
+    for sub in cat.sub_categories:
         sub.is_active = False
     
     db.commit()
