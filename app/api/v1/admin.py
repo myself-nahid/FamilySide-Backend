@@ -1481,6 +1481,12 @@ async def get_sub_categories(page: int = 1, limit: int = 20, search: Optional[st
     items = [TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url) if s.image_url else None, category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats]
     return APIResponse(status="success", message="Sub-Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
+# get sub-categories based on category_id without paginations
+@router.get("/sub-categories/{category_id}", response_model=APIResponse[List[TaxonomyResponseItem]])
+async def get_sub_categories_by_category(category_id: int, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    sub_cats = db.query(SubCategory).filter(SubCategory.category_id == category_id).all()
+    return APIResponse(status="success", message="Sub-Categories fetched", data=[TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url) if s.image_url else None, category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats])
+
 @router.post("/sub-categories", response_model=APIResponse[None])
 async def create_sub_category(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     form = await request.form()
@@ -1576,6 +1582,12 @@ async def get_tags(page: int = 1, limit: int = 20, search: Optional[str] = None,
     
     items = [TaxonomyResponseItem(id=t.id, name=t.name, is_active=t.is_active, image_url=get_full_url(api_request, t.image_url) if t.image_url else None) for t in tags]
     return APIResponse(status="success", message="Tags fetched", data={"total": total, "page": page, "limit": limit, "items": items})
+
+# get tags without paginations
+@router.get("/tags/all", response_model=APIResponse[List[TaxonomyResponseItem]])
+async def get_all_tags(api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    tags = db.query(Tag).all()
+    return APIResponse(status="success", message="Tags fetched", data=[TaxonomyResponseItem(id=t.id, name=t.name, is_active=t.is_active, image_url=get_full_url(api_request, t.image_url) if t.image_url else None) for t in tags])
 
 @router.post("/tags", response_model=APIResponse[None])
 async def create_tag(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
