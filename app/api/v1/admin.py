@@ -419,6 +419,35 @@ async def get_users_paginated(
     
     return APIResponse(status="success", message="Users fetched", data=pagination_data)
 
+# get all users (except admin) details without pagination
+@router.get("/users/all", response_model=APIResponse[List[UserDetailResponse]])
+async def get_all_users_details(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Returns a list of all users (except the current admin) with their details.
+    """
+    users = db.query(User).filter(User.id != admin.id).all()
+    
+    user_details_list = []
+    for u in users:
+        user_details_list.append(
+            UserDetailResponse(
+                id=u.id,
+                full_name=u.full_name,
+                email=u.email,
+                role=u.role or "Parent",
+                join_date=u.join_date.strftime("%d/%m/%Y") if u.join_date else "N/A",
+                location_name=u.location_name or "New work, UAS",
+                status=u.status or "Active",
+                subscription_plan=u.subscription_plan or "Free",
+                reviews_count=0  # Placeholder, replace with actual count if needed
+            )
+        )
+    
+    return APIResponse(status="success", message="All user details fetched", data=user_details_list)
+
 
 # 2.2 DETAILED USER REVIEW MODAL
 @router.get("/users/{user_id}", response_model=APIResponse[UserDetailResponse])
@@ -706,6 +735,36 @@ async def get_activities_paginated(
         data={"total": total_count, "page": page, "limit": limit, "items": activity_list}
     )
 
+# get all activities without pagination
+@router.get("/activities/all", response_model=APIResponse[List[ActivityListItem]])
+async def get_all_activities(
+    api_request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Returns a list of all activities without pagination, for quick access or dropdowns.
+    """
+    activities = db.query(PlatformItem).filter(PlatformItem.item_type == "activity").order_by(PlatformItem.created_at.desc()).all()
+    
+    activity_list = []
+    for activity in activities:
+        creator_label = "Admin"
+        if activity.creator:
+            creator_label = activity.creator.user_type.capitalize() if activity.creator.user_type else "User"
+            
+        activity_list.append(ActivityListItem(
+            id=activity.id,
+            name=activity.name,
+            image_url=get_full_url(api_request, activity.image_url) if activity.image_url else None,
+            created_by=creator_label,
+            category=activity.category.name if activity.category else "Uncategorized",
+            location=activity.location or "N/A",
+            fee=activity.price or 0.0
+        ))
+        
+    return APIResponse(status="success", message="All activities fetched", data=activity_list)
+
 # 4.2 VIEW ACTIVITY DETAILS 
 @router.get("/activities/{activity_id}", response_model=APIResponse[ActivityDetailResponse])
 async def get_activity_detail(
@@ -959,6 +1018,36 @@ async def get_events_paginated(
         data={"total": total_count, "page": page, "limit": limit, "items": event_list}
     )
 
+# get all events without pagination
+@router.get("/events/all", response_model=APIResponse[List[EventListItem]])
+async def get_all_events(
+    api_request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Returns a list of all events without pagination.
+    """
+    events = db.query(PlatformItem).filter(PlatformItem.item_type == "event").order_by(PlatformItem.created_at.desc()).all()
+    
+    event_list = []
+    for event in events:
+        creator_label = "Admin"
+        if event.creator:
+            creator_label = event.creator.user_type.capitalize() if event.creator.user_type else "User"
+            
+        event_list.append(EventListItem(
+            id=event.id,
+            name=event.name,
+            image_url=get_full_url(api_request, event.image_url) if event.image_url else None,
+            created_by=creator_label,
+            category=event.category.name if event.category else "Uncategorized",
+            location=event.location or "N/A",
+            fee=event.price or 0.0
+        ))
+        
+    return APIResponse(status="success", message="All events fetched", data=event_list)
+
 # 5.2 VIEW EVENT DETAILS 
 @router.get("/events/{event_id}", response_model=APIResponse[EventDetailResponse])
 async def get_event_detail(
@@ -1198,6 +1287,36 @@ async def get_gifts_paginated(
         message="Gifts fetched", 
         data={"total": total_count, "page": page, "limit": limit, "items": gift_list}
     )
+
+# get all gifts without pagination
+@router.get("/gifts/all", response_model=APIResponse[List[GiftListItem]])
+async def get_all_gifts(
+    api_request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Returns a list of all gifts without pagination.
+    """
+    gifts = db.query(PlatformItem).filter(PlatformItem.item_type == "gift").order_by(PlatformItem.created_at.desc()).all()
+    
+    gift_list = []
+    for gift in gifts:
+        creator_label = "Admin"
+        if gift.creator:
+            creator_label = gift.creator.user_type.capitalize() if gift.creator.user_type else "User"
+            
+        gift_list.append(GiftListItem(
+            id=gift.id,
+            name=gift.name,
+            image_url=get_full_url(api_request, gift.image_url) if gift.image_url else None,
+            created_by=creator_label,
+            category=gift.category.name if gift.category else "Uncategorized",
+            location=gift.location or "N/A",
+            fee=gift.price or 0.0
+        ))
+        
+    return APIResponse(status="success", message="All gifts fetched", data=gift_list)
 
 
 # 6.2 VIEW GIFT DETAILS 
