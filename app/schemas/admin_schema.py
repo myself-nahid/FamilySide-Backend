@@ -269,11 +269,11 @@ class TaxonomyResponseItem(BaseModel):
 
 class AdminProfileUpdateRequest(BaseModel):
     name: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
 
 class AdminProfileResponse(BaseModel):
     name: str
     image_url: Optional[str] = None
-    email: str
+    email: Optional[EmailStr] = None
     phone_number: Optional[str] = None

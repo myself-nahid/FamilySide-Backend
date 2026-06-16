@@ -1692,20 +1692,20 @@ async def update_admin_profile(
     Updates the Account Information form (Name, Email, Phone).
     """
     # Prevent changing email to one that already exists for another user
-    if payload.email != admin.email:
-        existing_user = db.query(User).filter(User.email == payload.email).first()
-        if existing_user:
-            raise HTTPException(status_code=400, detail="This email is already in use by another account.")
+    # if payload.email != admin.email:
+    #     existing_user = db.query(User).filter(User.email == payload.email).first()
+    #     if existing_user:
+    #         raise HTTPException(status_code=400, detail="This email is already in use by another account.")
             
     admin.full_name = payload.name
-    admin.email = payload.email
+    # admin.email = payload.email
     admin.phone_number = payload.phone_number
     db.commit()
     
     # Return the updated data back to the frontend
     updated_detail = AdminProfileResponse(
         name=admin.full_name,
-        email=admin.email,
+        # email=admin.email,
         phone_number=admin.phone_number
     )
     return APIResponse(status="success", message="Account information updated successfully", data=updated_detail)
