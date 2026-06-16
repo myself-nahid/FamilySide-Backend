@@ -292,6 +292,7 @@ async def get_all_nearby_events(
 # STEP 1: GET SUB-CATEGORIES FOR A CATEGORY 
 @router.get("/categories/{category_id}/sub-categories", response_model=APIResponse[List[SubCategoryListResponse]])
 async def get_sub_categories_for_family(
+    api_request: Request,
     category_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -310,7 +311,7 @@ async def get_sub_categories_for_family(
         SubCategoryListResponse(
             id=s.id,
             name=s.name,
-            image_url=None, # Use a default placeholder in frontend if null
+            image_url=get_full_url(api_request, s.image_url) if s.image_url else None,
             description="Clinic / Center"
         ) for s in sub_cats
     ]
