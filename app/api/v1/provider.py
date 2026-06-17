@@ -191,6 +191,46 @@ async def get_provider_item_for_edit(
     
     return APIResponse(status="success", message="Item data fetched", data=data)
 
+
+@router.get("/items/{item_id}/view", response_model=APIResponse[ProviderItemDetailResponse])
+async def view_item_details(
+    api_request: Request,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Public-ish view for a single activity/event used by both Family and Provider apps."""
+    item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    sub_cats = item.sub_categories if isinstance(item.sub_categories, list) else []
+    tags_list = item.tags if isinstance(item.tags, list) else []
+
+    data = ProviderItemDetailResponse(
+        id=item.id,
+        item_type=item.item_type,
+        name=item.name,
+        location=item.location,
+        category_id=item.category_id,
+        price=item.price or 0.0,
+        description=item.description,
+        website=item.website,
+        whatsapp=item.whatsapp,
+        email=item.email,
+        instagram=item.instagram,
+        opening_days=item.opening_days,
+        opening_hours=item.opening_hours,
+        date=item.date.strftime("%Y-%m-%d") if item.date else None,
+        time=item.start_time.strftime("%I:%M %p") if item.start_time else None,
+        sub_categories=sub_cats,
+        tags=tags_list,
+        image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
+        status=item.status or "pending"
+    )
+
+    return APIResponse(status="success", message="Item details fetched", data=data)
+
 # 2. UPDATE ITEM
 @router.put("/manage/items/{item_id}", response_model=APIResponse[None])
 async def update_provider_item(
