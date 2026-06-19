@@ -8,7 +8,7 @@ from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.core_data import Notification, PlatformItem, Category, SavedItem, SubCategory, SupportMessage
 from app.schemas.auth_schema import APIResponse
-from app.schemas.family_schema import CategoryGridItem, FullProfileResponse, GiftFilterParams, HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, NotificationGroup, NotificationItem, NotificationListResponse, ReviewResponse, SavedItemsResponse, SearchFilterParams, SearchTabInitResponse, SubCategoryListResponse, UserProfileMetrics, UserReviewItem
+from app.schemas.family_schema import CategoryGridItem, FullProfileResponse, GiftFilterParams, HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, MapItemResponse, NotificationGroup, NotificationItem, NotificationListResponse, ReviewResponse, SavedItemsResponse, SearchFilterParams, SearchTabInitResponse, SubCategoryListResponse, UserProfileMetrics, UserReviewItem
 from app.models.core_data import UserGiftList, SavedItem
 from app.schemas.family_schema import GiftListCreate, GiftListResponse, SaveItemRequest, GiftListFolderResponse, CreateGiftListRequest, AddToGiftListRequest
 from app.models.core_data import Review
@@ -494,23 +494,61 @@ async def search_and_filter_items(
 
 
 # 1. MAP DISCOVERY 
-@router.get("/explore/map", response_model=APIResponse[List[MapPinResponse]])
+@router.get("/explore/map", response_model=APIResponse[dict])
 async def get_map_pins(
+    api_request: Request,
     category_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    categories = db.query(Category).filter(Category.is_active == True).all()
+    category_list = [CategoryTab(id=c.id, name=c.name) for c in categories]
+
     query = db.query(PlatformItem).filter(PlatformItem.status == "approved")
     if category_id:
         query = query.filter(PlatformItem.category_id == category_id)
-        
     items = query.all()
+
+    saved_item_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
+
     pins = [
         MapPinResponse(
-            id=i.id, item_type=i.item_type, lat=i.lat or 0.0, lng=i.lng or 0.0,
+            id=i.id,
+            item_type=i.item_type,
+            lat=i.lat or 0.0,
+            lng=i.lng or 0.0,
             category_icon=i.category.name if i.category else "General"
-        ) for i in items if i.lat and i.lng
+        ) for i in items if i.lat is not None and i.lng is not None
     ]
-    return APIResponse(status="success", message="Pins loaded", data=pins)
+
+    map_items = []
+    for item in items:
+        map_items.append(MapItemResponse(
+            id=item.id,
+            item_type=item.item_type,
+            name=item.name,
+            image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
+            category_name=item.category.name if item.category else "General",
+            price=item.price or 0.0,
+            lat=item.lat or 0.0,
+            lng=item.lng or 0.0,
+            location=item.location or "N/A",
+            distance_km=calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng),
+            age_range="0-20 years",
+            date_label=item.date.strftime("%d %B %Y") if item.date else None,
+            is_recommended=True,
+            is_saved=(item.id in saved_item_ids)
+        ))
+
+    return APIResponse(
+        status="success",
+        message="Map data loaded",
+        data={
+            "categories": category_list,
+            "items": map_items,
+            "pins": pins
+        }
+    )
 
 # Define the helper function 
 def log_analytics(db: Session, provider_id: int, action: str, item_id: int = None):

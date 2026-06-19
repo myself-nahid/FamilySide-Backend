@@ -25,6 +25,22 @@ class HomeItemCard(BaseModel):
     is_recommended: bool
     is_saved: bool
 
+class MapItemResponse(BaseModel):
+    id: int
+    item_type: str
+    name: str
+    image_url: Optional[str]
+    category_name: str
+    price: float
+    lat: float
+    lng: float
+    location: Optional[str]
+    distance_km: Optional[float]
+    age_range: str
+    date_label: Optional[str]
+    is_recommended: bool
+    is_saved: bool
+    
 class HomeFeedResponse(BaseModel):
     categories: List[CategoryTab]
     recommended: List[HomeItemCard]
