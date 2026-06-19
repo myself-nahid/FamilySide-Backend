@@ -18,6 +18,7 @@ class HomeItemCard(BaseModel):
     image_url: Optional[str]
     category_name: str
     price: float
+    location: Optional[str] = None
     distance_km: Optional[float]
     age_range: str # Derived from tags
     date_label: Optional[str] # e.g. "25 Jun"

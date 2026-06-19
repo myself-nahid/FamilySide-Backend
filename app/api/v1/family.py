@@ -979,16 +979,18 @@ async def search_gift_planner(
             if age_tags:
                 age_range = age_tags[0]
 
+        display_date = item.date or item.created_at
         items.append(HomeItemCard(
             id=item.id,
             item_type=item.item_type,
             name=item.name,
             image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
             category_name=item.category.name if item.category else "General",
+            location=item.location or "N/A",
             price=item.price or 0.0,
-            distance_km=dist,
+            distance_km=dist if dist is not None else 0.0,
             age_range=age_range,
-            date_label=item.date.strftime("%d %B %Y") if item.date else None,
+            date_label=display_date.strftime("%d %B %Y") if display_date else "",
             is_recommended=True,
             is_saved=(item.id in saved_item_ids)
         ))
