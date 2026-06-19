@@ -932,6 +932,7 @@ async def mark_all_notifications_read(
 # 1. GIFT PLANNER SEARCH 
 @router.get("/gifts/search", response_model=APIResponse[dict])
 async def search_gift_planner(
+    api_request: Request,
     q: Optional[str] = Query(None, alias="query"),
     category: Optional[str] = "All", # Birthday, Christmas, etc.
     filters: GiftFilterParams = Depends(),
@@ -961,12 +962,38 @@ async def search_gift_planner(
         query = query.filter(PlatformItem.tags.contains([filters.child_age]))
 
     # Price Range Logic
-    if filters.price_range == "Under $25": query = query.filter(PlatformItem.price < 25)
-    elif filters.price_range == "$25 - $50": query = query.filter(and_(PlatformItem.price >= 25, PlatformItem.price <= 50))
+    if filters.price_range == "Under $25":
+        query = query.filter(PlatformItem.price < 25)
+    elif filters.price_range == "$25 - $50":
+        query = query.filter(and_(PlatformItem.price >= 25, PlatformItem.price <= 50))
 
     results = query.all()
-    # Reuse HomeItemCard mapping logic...
-    return APIResponse(status="success", message="Gifts found", data={"items": results})
+    saved_item_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
+
+    items = []
+    for item in results:
+        dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        age_range = "0-20 years"
+        if item.tags and isinstance(item.tags, list):
+            age_tags = [t for t in item.tags if "year" in t.lower() or "age" in t.lower()]
+            if age_tags:
+                age_range = age_tags[0]
+
+        items.append(HomeItemCard(
+            id=item.id,
+            item_type=item.item_type,
+            name=item.name,
+            image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
+            category_name=item.category.name if item.category else "General",
+            price=item.price or 0.0,
+            distance_km=dist,
+            age_range=age_range,
+            date_label=item.date.strftime("%d %B %Y") if item.date else None,
+            is_recommended=True,
+            is_saved=(item.id in saved_item_ids)
+        ))
+
+    return APIResponse(status="success", message="Gifts found", data={"items": items})
 
 
 # 2. MY GIFT LISTS / FOLDERS 
