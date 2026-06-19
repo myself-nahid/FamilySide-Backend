@@ -969,6 +969,10 @@ async def search_gift_planner(
 
     results = query.all()
     saved_item_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
+    categories = [
+        CategoryTab(id=c.id, name=c.name)
+        for c in db.query(Category).filter(Category.is_active == True).all()
+    ]
 
     items = []
     for item in results:
@@ -995,7 +999,11 @@ async def search_gift_planner(
             is_saved=(item.id in saved_item_ids)
         ))
 
-    return APIResponse(status="success", message="Gifts found", data={"items": items})
+    return APIResponse(
+        status="success",
+        message="Gifts found",
+        data={"items": items, "categories": categories}
+    )
 
 
 # 2. MY GIFT LISTS / FOLDERS 
