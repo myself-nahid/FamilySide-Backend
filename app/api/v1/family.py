@@ -559,43 +559,76 @@ def log_analytics(db: Session, provider_id: int, action: str, item_id: int = Non
 
 # 2. ITEM FULL DETAILS 
 @router.get("/items/{item_id}/details", response_model=APIResponse[ItemDetailFullResponse])
-async def get_item_details(item_id: int, db: Session = Depends(get_db)):
+async def get_item_details(item_id: int, api_request: Request, db: Session = Depends(get_db)):
     item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     # Every time this API is called, we log an 'item_view' for the provider
     if item.creator_id:
         log_analytics(
-            db, 
-            provider_id=item.creator_id, 
-            action="item_view", 
+            db,
+            provider_id=item.creator_id,
+            action="item_view",
             item_id=item.id
         )
 
     # Fetch nested lists for the detail page
-    events = db.query(PlatformItem).filter(PlatformItem.item_type == "event", PlatformItem.category_id == item.category_id).limit(2).all()
-    gifts = db.query(PlatformItem).filter(PlatformItem.item_type == "gift").limit(2).all()
-    
+    events = db.query(PlatformItem).filter(
+        PlatformItem.item_type == "event",
+        PlatformItem.category_id == item.category_id,
+        PlatformItem.id != item.id,
+        PlatformItem.status == "approved"
+    ).limit(3).all()
+
+    gifts = db.query(PlatformItem).filter(
+        PlatformItem.item_type == "gift",
+        PlatformItem.status == "approved"
+    ).limit(3).all()
+
     reviews = db.query(Review).filter(Review.item_id == item_id).order_by(Review.created_at.desc()).limit(5).all()
+
+    # Map events and gifts into HomeItemCard-like responses
+    def map_to_card(src_item):
+        return HomeItemCard(
+            id=src_item.id,
+            item_type=src_item.item_type,
+            name=src_item.name,
+            image_url=get_full_url(api_request, src_item.image_url) if src_item.image_url else None,
+            category_name=src_item.category.name if src_item.category else "General",
+            price=src_item.price or 0.0,
+            distance_km=None,
+            age_range="0-20 years",
+            date_label=src_item.date.strftime("%d %B %Y") if src_item.date else None,
+            is_recommended=(src_item.status == "approved"),
+            is_saved=False
+        )
+
+    related_events = [map_to_card(e) for e in events]
+    gift_ideas = [map_to_card(g) for g in gifts]
 
     # Formatted Response
     data = ItemDetailFullResponse(
         id=item.id,
         name=item.name,
         description=item.description or "",
-        image_url=item.image_url,
+        image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
         category_name=item.category.name if item.category else "Playground",
-        lat=item.lat or 0.0, lng=item.lng or 0.0,
+        lat=item.lat or 0.0,
+        lng=item.lng or 0.0,
         address=item.location or "N/A",
         opening_hours=item.opening_hours or "07:00 AM to 09:00 PM",
-        website=item.website, instagram=item.instagram, whatsapp=item.whatsapp,
-        related_events=[], # Mapping logic here (similar to HomeItemCard)
-        gift_ideas=[],     # Mapping logic here
+        website=item.website,
+        instagram=item.instagram,
+        whatsapp=item.whatsapp,
+        related_events=related_events,
+        gift_ideas=gift_ideas,
         reviews=[
             ReviewResponse(
-                user_name=r.user.full_name, user_image=r.user.profile_image_url,
-                recommendation_level=r.recommendation_level, comment=r.comment,
+                user_name=r.user.full_name if r.user else "",
+                user_image=r.user.profile_image_url if r.user else None,
+                recommendation_level=r.recommendation_level,
+                comment=r.comment,
                 date=r.created_at.strftime("%d %B %Y")
             ) for r in reviews
         ],
