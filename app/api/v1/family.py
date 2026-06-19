@@ -1008,16 +1008,50 @@ async def search_gift_planner(
 
 # 2. MY GIFT LISTS / FOLDERS 
 @router.get("/gift-planner/folders", response_model=APIResponse[dict])
-async def get_my_gift_folders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_my_gift_folders(
+    api_request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Fetches the folder overview (Emma's Birthday, etc.) seen in Image 2"""
     
     folders = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
     
     # Gifts saved but not in a folder
-    loose_items = db.query(SavedItem).filter(
-        SavedItem.user_id == current_user.id, 
-        SavedItem.gift_list_id == None
-    ).count()
+    loose_saved_items = db.query(SavedItem).join(PlatformItem, SavedItem.item_id == PlatformItem.id).filter(
+        SavedItem.user_id == current_user.id,
+        SavedItem.gift_list_id == None,
+        PlatformItem.item_type == "gift"
+    ).all()
+
+    loose_items = len(loose_saved_items)
+    loose_items_cards = []
+    for saved_item in loose_saved_items:
+        item = saved_item.item
+        if not item:
+            continue
+
+        dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        age_range = "0-20 years"
+        if item.tags and isinstance(item.tags, list):
+            age_tags = [t for t in item.tags if "year" in t.lower() or "age" in t.lower()]
+            if age_tags:
+                age_range = age_tags[0]
+
+        loose_items_cards.append(HomeItemCard(
+            id=item.id,
+            item_type=item.item_type,
+            name=item.name,
+            image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
+            category_name=item.category.name if item.category else "General",
+            location=item.location or "N/A",
+            price=item.price or 0.0,
+            distance_km=dist,
+            age_range=age_range,
+            date_label=item.date.strftime("%d %B %Y") if item.date else None,
+            is_recommended=True,
+            is_saved=True
+        ))
 
     data = [
         GiftListFolderResponse(
@@ -1027,7 +1061,15 @@ async def get_my_gift_folders(db: Session = Depends(get_db), current_user: User 
         ) for f in folders
     ]
     
-    return APIResponse(status="success", message="Folders loaded", data={"folders": data, "loose_items_count": loose_items})
+    return APIResponse(
+        status="success",
+        message="Folders loaded",
+        data={
+            "folders": data,
+            "loose_items_count": loose_items,
+            "loose_items": loose_items_cards
+        }
+    )
 
 
 # 3. FOLDER DETAIL VIEW 
