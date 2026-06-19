@@ -1032,13 +1032,45 @@ async def get_my_gift_folders(db: Session = Depends(get_db), current_user: User 
 
 # 3. FOLDER DETAIL VIEW 
 @router.get("/gift-planner/folders/{folder_id}")
-async def get_folder_details(folder_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_folder_details(
+    folder_id: int,
+    api_request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Returns items inside a specific folder like 'Emma's Birthday'"""
     folder = db.query(UserGiftList).filter(UserGiftList.id == folder_id, UserGiftList.user_id == current_user.id).first()
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
 
-    items = [s.item for s in folder.saved_items]
+    items = []
+    for saved_item in folder.saved_items:
+        item = saved_item.item
+        if not item:
+            continue
+
+        dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        age_range = "0-20 years"
+        if item.tags and isinstance(item.tags, list):
+            age_tags = [t for t in item.tags if "year" in t.lower() or "age" in t.lower()]
+            if age_tags:
+                age_range = age_tags[0]
+
+        items.append(HomeItemCard(
+            id=item.id,
+            item_type=item.item_type,
+            name=item.name,
+            image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
+            category_name=item.category.name if item.category else "General",
+            location=item.location or "N/A",
+            price=item.price or 0.0,
+            distance_km=dist,
+            age_range=age_range,
+            date_label=item.date.strftime("%d %B %Y") if item.date else None,
+            is_recommended=True,
+            is_saved=True
+        ))
+
     return APIResponse(status="success", message="Folder items loaded", data={"name": folder.name, "items": items})
 
 
