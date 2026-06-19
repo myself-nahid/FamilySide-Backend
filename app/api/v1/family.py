@@ -20,6 +20,8 @@ from fastapi import Form, File, UploadFile
 from app.models.core_data import Review
 from app.models.core_data import AnalyticsLog
 from app.core.utils import get_full_url
+from app.core.config import settings
+from jose import jwt, JWTError
 import os
 import shutil
 
@@ -635,6 +637,68 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
         average_rating_label="Recommended"
     )
     return APIResponse(status="success", message="Details loaded", data=data)
+
+
+# 4. SHARE ITEM (Generate a short, signed link that can be shared externally)
+@router.post("/items/{item_id}/share", response_model=APIResponse[dict])
+async def share_item(
+    item_id: int,
+    api_request: Request,
+    expire_hours: int = 168,  # default 7 days
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    now = datetime.utcnow()
+    exp = now + timedelta(hours=expire_hours)
+    payload = {
+        "item_id": item.id,
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp()),
+        "shared_by": current_user.id
+    }
+
+    token = jwt.encode(payload, settings.SECRET_KEY or "", algorithm=settings.ALGORITHM or "HS256")
+    # Ensure the generated URL points to the publicly resolvable route (includes API prefix)
+    share_url = f"{str(api_request.base_url).rstrip('/')}/api/v1/family/share/item/{token}"
+
+    return APIResponse(status="success", message="Share link generated", data={"share_url": share_url, "expires_at": int(exp.timestamp())})
+
+
+# Resolve share token and return public item summary
+@router.get("/share/item/{token}", response_model=APIResponse[dict])
+async def resolve_share_token(token: str, api_request: Request, db: Session = Depends(get_db)):
+    try:
+        data = jwt.decode(token, settings.SECRET_KEY or "", algorithms=[settings.ALGORITHM or "HS256"])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired share token")
+
+    item_id = data.get("item_id")
+    if not item_id:
+        raise HTTPException(status_code=400, detail="Invalid token payload")
+
+    item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # Return a compact public summary (suitable for share preview)
+    public = {
+        "id": item.id,
+        "name": item.name,
+        "description": item.description or "",
+        "image_url": get_full_url(api_request, item.image_url) if item.image_url else None,
+        "category_name": item.category.name if item.category else "",
+        "price": item.price or 0.0,
+        "lat": item.lat or 0.0,
+        "lng": item.lng or 0.0,
+        "address": item.location or "",
+        "status": item.status
+    }
+
+    return APIResponse(status="success", message="Share token resolved", data=public)
 
 # 3. WRITE REVIEW 
 @router.post("/items/{item_id}/reviews", response_model=APIResponse[None])
