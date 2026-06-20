@@ -14,6 +14,8 @@ from app.schemas.family_schema import GiftListCreate, GiftListResponse, SaveItem
 from app.models.core_data import Review
 from app.models.core_data import SupportMessage, Review, PlatformItem
 from app.schemas.family_schema import FullProfileResponse, UserProfileMetrics, ProfileUpdateRequest, SupportRequest, UserReviewItem
+from app.schemas.family_schema import MyChildrenProfileResponse, ChildDetailInfo, UpdateChildrenProfileRequest
+from app.models.user import Child
 from datetime import datetime, timedelta
 from app.core.utils import calculate_distance_km
 from fastapi import Form, File, UploadFile
@@ -1376,14 +1378,124 @@ async def get_my_profile_dashboard(db: Session = Depends(get_db), current_user: 
     )
     return APIResponse(status="success", message="Profile loaded", data=data)
 
-# 2. EDIT PROFILE & CHILD INFO 
+# 2. EDIT PROFILE 
 @router.put("/profile/update", response_model=APIResponse[None])
-async def update_basic_profile(payload: ProfileUpdateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    current_user.full_name = payload.full_name
-    current_user.email = payload.email
-    current_user.location_name = payload.location_name
+async def update_basic_profile(
+    full_name: str = Form(...),
+    location_name: str = Form(...),
+    email: Optional[str] = Form(None), 
+    photo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Update Email ONLY if provided and different from current
+    if email and email != current_user.email:
+        existing_user = db.query(User).filter(User.email == email).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="This email is already in use by another account.")
+        current_user.email = email
+
+    # 2. Handle Profile Picture Upload
+    if photo and photo.filename:
+        UPLOAD_DIR = "uploads/profiles"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        
+        file_extension = photo.filename.split(".")[-1]
+        file_name = f"user_{current_user.id}_{datetime.utcnow().timestamp()}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+            
+        current_user.profile_image_url = f"/{file_path}".replace("\\", "/")
+
+    # 3. Update Text Fields
+    current_user.full_name = full_name
+    current_user.location_name = location_name
+    
     db.commit()
-    return APIResponse(status="success", message="Profile updated")
+    
+    return APIResponse(status="success", message="Profile updated successfully")
+
+# GET CHILD INFORMATION 
+@router.get("/profile/children", response_model=APIResponse[MyChildrenProfileResponse])
+async def get_my_children_profile(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Fetches the user's location, expecting status, and existing children 
+    to populate the "Child Information" edit screen and slider cards.
+    """
+    # Check if user is expecting
+    expecting_child = db.query(Child).filter(
+        Child.parent_id == current_user.id, 
+        Child.is_expecting == True
+    ).first()
+    
+    is_expecting = expecting_child is not None
+    expected_date = expecting_child.expected_due_date.strftime("%d/%m/%Y") if is_expecting and expecting_child.expected_due_date else None
+
+    # Fetch born kids
+    kids = db.query(Child).filter(
+        Child.parent_id == current_user.id, 
+        Child.is_expecting == False
+    ).all()
+    
+    kids_list = [
+        ChildDetailInfo(
+            id=k.id,
+            name=k.name,
+            dob=k.dob.strftime("%d/%m/%Y") if k.dob else None, # Formatted for the UI placeholder
+            gender=k.gender
+        ) for k in kids
+    ]
+
+    response_data = MyChildrenProfileResponse(
+        location_name=current_user.location_name,
+        is_expecting=is_expecting,
+        expected_due_date=expected_date,
+        kids=kids_list
+    )
+    
+    return APIResponse(status="success", message="Child information loaded", data=response_data)
+
+
+# UPDATE CHILD INFORMATION 
+@router.put("/profile/children", response_model=APIResponse[None])
+async def update_my_children_profile(
+    payload: UpdateChildrenProfileRequest, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Updates the Location and completely refreshes the Child records.
+    """
+    # 1. Update Location if provided
+    if payload.location_name:
+        current_user.location_name = payload.location_name
+
+    # 2. Clear old child records to ensure a clean sync with the new form state
+    db.query(Child).filter(Child.parent_id == current_user.id).delete()
+    
+    # 3. Save Expecting Info
+    if payload.is_expecting:
+        db.add(Child(
+            parent_id=current_user.id,
+            is_expecting=True,
+            expected_due_date=payload.expected_due_date
+        ))
+    
+    # 4. Save Kids Info (from the horizontal slider/list)
+    else:
+        for kid in payload.children:
+            db.add(Child(
+                parent_id=current_user.id,
+                is_expecting=False,
+                name=kid.name,
+                dob=kid.dob,
+                gender=kid.gender
+            ))
+
+    db.commit()
+    return APIResponse(status="success", message="Child information updated successfully!")
 
 @router.get("/profile/reviews", response_model=APIResponse[List[UserReviewItem]])
 async def get_my_reviews_list(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -1415,19 +1527,28 @@ async def submit_support_ticket(payload: SupportRequest, db: Session = Depends(g
     return APIResponse(status="success", message="Your query has been submitted. We will contact you soon.")
 
 @router.get("/profile/suggestions", response_model=APIResponse[dict])
-async def get_my_suggestions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_my_suggestions(api_request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Matches 'Your Suggestions' / 'Suggested' (Image 5)"""
+    
     # User suggestions are PlatformItems created by the user
     items = db.query(PlatformItem).filter(PlatformItem.creator_id == current_user.id).all()
     
-    data = [{
-        "id": i.id,
-        "name": i.name,
-        "description": i.description[:60] + "...",
-        "location": i.location,
-        "status": i.status, # approved, pending, rejected
-        "category": "Health"
-    } for i in items]
+    data = []
+    for i in items:
+        # Safe description slicing
+        desc = ""
+        if i.description:
+            desc = i.description[:60] + "..." if len(i.description) > 60 else i.description
+            
+        data.append({
+            "id": i.id,
+            "name": i.name,
+            "description": desc,
+            "location": i.location,
+            "image_url": get_full_url(api_request, i.image_url) if i.image_url else None,
+            "status": i.status.capitalize() if i.status else "Pending", # Approved, Pending, Rejected
+            "category": i.category.name if i.category else "General"    # Dynamic category name
+        })
     
     return APIResponse(status="success", message="Suggestions fetched", data={"items": data})
 

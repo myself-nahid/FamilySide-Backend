@@ -1,3 +1,5 @@
+from datetime import date
+
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 
@@ -40,7 +42,7 @@ class MapItemResponse(BaseModel):
     date_label: Optional[str]
     is_recommended: bool
     is_saved: bool
-    
+
 class HomeFeedResponse(BaseModel):
     categories: List[CategoryTab]
     recommended: List[HomeItemCard]
@@ -200,3 +202,24 @@ class UserReviewItem(BaseModel):
     date: str
     comment: str
     recommendation_label: str # "Recommended"
+
+# --- ADD TO THE BOTTOM OF app/schemas/family_schema.py ---
+from app.schemas.onboarding_schema import ChildBase
+
+class ChildDetailInfo(BaseModel):
+    id: int
+    name: Optional[str] = None
+    dob: Optional[str] = None # Will return formatted as DD/MM/YYYY
+    gender: Optional[str] = None
+
+class MyChildrenProfileResponse(BaseModel):
+    location_name: Optional[str] = None
+    is_expecting: bool
+    expected_due_date: Optional[str] = None
+    kids: List[ChildDetailInfo]
+
+class UpdateChildrenProfileRequest(BaseModel):
+    location_name: Optional[str] = None
+    is_expecting: bool
+    expected_due_date: Optional[date] = None # Send as YYYY-MM-DD from frontend
+    children: List[ChildBase] = []
