@@ -907,7 +907,7 @@ async def init_search_tab(
 # 2. UNIVERSAL SEARCH ENGINE (Handles Bar, Filters, and Quick Links)
 @router.get("/search/execute", response_model=APIResponse[dict])
 async def execute_search(
-    api_request: Request, # <--- 1. ADD THIS to fix image URLs
+    api_request: Request, 
     q: Optional[str] = Query(None, alias="query"), 
     mode: Optional[str] = "all",                 
     category_id: Optional[int] = None,
@@ -937,9 +937,11 @@ async def execute_search(
     elif mode == "events":
         query = query.filter(PlatformItem.item_type == "event")
     elif mode == "for_you":
+        # Logic: Filter by user interests set during onboarding
         user_interest_names = [i.name for i in current_user.interests]
         if user_interest_names:
-            query = query.filter(PlatformItem.tags.has_any(user_interest_names))
+            tag_conditions = [PlatformItem.tags.contains([interest]) for interest in user_interest_names]
+            query = query.filter(or_(*tag_conditions))
             
     # C. Handle Category Grid Taps
     if category_id:
@@ -959,11 +961,9 @@ async def execute_search(
         if mode == "near_you" and (dist is None or dist > 50):
             continue
 
-        # --- 2. ADD DATE LOGIC ---
         display_date = item.date or item.created_at
         formatted_date = display_date.strftime("%d %B, %Y") if display_date else None
         
-        # --- 3. GET FULL IMAGE URL ---
         absolute_image_url = get_full_url(api_request, item.image_url)
 
         processed_cards.append(HomeItemCard(
@@ -975,7 +975,7 @@ async def execute_search(
             price=item.price or 0.0,
             distance_km=dist,
             age_range="0-20 years",
-            date_label=formatted_date, # <--- 4. THIS FIXES THE CRASH!
+            date_label=formatted_date, 
             is_recommended=True,
             is_saved=(item.id in saved_item_ids)
         ))
