@@ -867,6 +867,7 @@ async def toggle_save_item(
 # 1. SEARCH TAB INITIALIZATION 
 @router.get("/search/init", response_model=APIResponse[SearchTabInitResponse])
 async def init_search_tab(
+    api_request: Request,
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
@@ -890,6 +891,7 @@ async def init_search_tab(
         category_list.append(CategoryGridItem(
             id=cat.id,
             name=cat.name,
+            image_url=get_full_url(api_request, cat.image_url) if cat.image_url else None,
             color_code=ui_colors[idx % len(ui_colors)]
         ))
 
