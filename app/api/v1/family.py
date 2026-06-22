@@ -1206,6 +1206,7 @@ async def get_my_gift_folders(
         GiftListFolderResponse(
             id=f.id, name=f.name, occasion=f.occasion or "General",
             items_count=len(f.saved_items),
+            image_url=get_full_url(api_request, f.image_url) if f.image_url else None,
             last_updated_label="Last updated 2 days ago"
         ) for f in folders
     ]
@@ -1215,6 +1216,7 @@ async def get_my_gift_folders(
         message="Folders loaded",
         data={
             "folders": data,
+            "folders_count": len(data),
             "loose_items_count": loose_items,
             "loose_items": loose_items_cards
         }
@@ -1267,11 +1269,43 @@ async def get_folder_details(
 
 # 4. CREATE NEW LIST & ADD ITEM 
 @router.post("/gift-planner/folders", response_model=APIResponse[None])
-async def create_new_gift_folder(payload: CreateGiftListRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Matches Image 7 Modal"""
-    new_folder = UserGiftList(user_id=current_user.id, name=payload.name, occasion=payload.occasion)
+async def create_new_gift_folder(
+    name: str = Form(...),
+    occasion: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None), 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Creates a new gift list/folder and handles optional cover image upload"""
+    
+    saved_image_path = None
+    
+    # 1. Handle File Upload if provided
+    if photo and photo.filename:
+        UPLOAD_DIR = "uploads/gift_lists"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        
+        file_extension = photo.filename.split(".")[-1]
+        file_name = f"list_{current_user.id}_{datetime.utcnow().timestamp()}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+            
+        # Format the path with forward slashes for the database
+        saved_image_path = f"/{file_path}".replace("\\", "/")
+
+    # 2. Save to Database
+    new_folder = UserGiftList(
+        user_id=current_user.id, 
+        name=name, 
+        occasion=occasion,
+        image_url=saved_image_path # Save the image URL
+    )
+    
     db.add(new_folder)
     db.commit()
+    
     return APIResponse(status="success", message="List created successfully")
 
 @router.post("/gift-planner/add-to-folder", response_model=APIResponse[None])

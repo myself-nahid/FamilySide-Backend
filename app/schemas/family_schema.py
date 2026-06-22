@@ -154,6 +154,7 @@ class GiftListFolderResponse(BaseModel):
     name: str
     occasion: str
     items_count: int
+    image_url: Optional[str] = None
     last_updated_label: str # e.g., "Last updated 2 days ago"
 
 class CreateGiftListRequest(BaseModel):

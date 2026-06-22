@@ -135,6 +135,7 @@ class UserGiftList(Base):
     
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    image_url = Column(String, nullable=True)
 
     user = relationship("User", backref="gift_folders")
     # Link to SavedItem table

@@ -53,7 +53,8 @@ cors_origins = [
     "http://localhost:8000",
     "http://localhost:8015",
     "https://familyside.com",
-    "http://10.10.12.70:5173"
+    "http://10.10.12.70:5173",
+    "http://10.10.29.70:5173",
 ]
 
 app.add_middleware(
