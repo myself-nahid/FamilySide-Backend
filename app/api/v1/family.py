@@ -1308,6 +1308,20 @@ async def create_new_gift_folder(
     
     return APIResponse(status="success", message="List created successfully")
 
+# delete individual item from folder
+@router.delete("/gift-planner/folders/{folder_id}/items/{item_id}", response_model=APIResponse[None])
+async def remove_item_from_folder(folder_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Removes an item from a specific gift folder"""
+    saved_item = db.query(SavedItem).filter(SavedItem.gift_list_id == folder_id, SavedItem.item_id == item_id, SavedItem.user_id == current_user.id).first()
+    
+    if not saved_item:
+        raise HTTPException(status_code=404, detail="Item not found in the specified folder")
+
+    db.delete(saved_item)
+    db.commit()
+    
+    return APIResponse(status="success", message="Item removed from folder")
+
 @router.post("/gift-planner/add-to-folder", response_model=APIResponse[None])
 async def add_item_to_folder(payload: AddToGiftListRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Matches Image 5 Modal: Moves an item into a specific folder"""
@@ -1321,6 +1335,48 @@ async def add_item_to_folder(payload: AddToGiftListRequest, db: Session = Depend
     saved_item.gift_list_id = payload.gift_list_id
     db.commit()
     return APIResponse(status="success", message="Gift added to your list")
+
+# get available all the items except those items that are already in the folder, to show in the "Add to list" modal 
+@router.get("/gift-planner/folders/{folder_id}/available-items", response_model=APIResponse[List[HomeItemCard]])
+async def get_available_items_for_folder(folder_id: int, api_request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Fetches items that can be added to a specific folder (i.e., not already in it)"""
+    # Get item IDs already in the folder
+    existing_item_ids = db.query(SavedItem.item_id).filter(SavedItem.gift_list_id == folder_id, SavedItem.user_id == current_user.id).all()
+    existing_item_ids = [id for (id,) in existing_item_ids]  # Unpack from tuples
+
+    # Fetch approved gift items not already in the folder
+    items = db.query(PlatformItem).filter(
+        PlatformItem.item_type == "gift",
+        PlatformItem.status == "approved",
+        ~PlatformItem.id.in_(existing_item_ids)  # Exclude items already in the folder
+    ).all()
+
+    result = []
+    for item in items:
+        dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        age_range = "0-20 years"
+        if item.tags and isinstance(item.tags, list):
+            age_tags = [t for t in item.tags if "year" in t.lower() or "age" in t.lower()]
+            if age_tags:
+                age_range = age_tags[0]
+
+        display_date = item.date or item.created_at
+        result.append(HomeItemCard(
+            id=item.id,
+            item_type=item.item_type,
+            name=item.name,
+            image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
+            category_name=item.category.name if item.category else "General",
+            location=item.location or "N/A",
+            price=item.price or 0.0,
+            distance_km=dist,
+            age_range=age_range,
+            date_label=display_date.strftime("%d %B %Y") if display_date else None,
+            is_recommended=True,
+            is_saved=False
+        ))
+
+    return APIResponse(status="success", message="Available items fetched", data=result)
 
 """saved items / bookmarks"""
 
