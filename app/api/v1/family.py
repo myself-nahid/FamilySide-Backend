@@ -907,8 +907,9 @@ async def init_search_tab(
 # 2. UNIVERSAL SEARCH ENGINE (Handles Bar, Filters, and Quick Links)
 @router.get("/search/execute", response_model=APIResponse[dict])
 async def execute_search(
-    q: Optional[str] = Query(None, alias="query"), # Text from Search Bar
-    mode: Optional[str] = "all",                 # 'for_you', 'near_you', 'gifts', 'events'
+    api_request: Request, # <--- 1. ADD THIS to fix image URLs
+    q: Optional[str] = Query(None, alias="query"), 
+    mode: Optional[str] = "all",                 
     category_id: Optional[int] = None,
     page: int = 1,
     limit: int = 10,
@@ -936,7 +937,6 @@ async def execute_search(
     elif mode == "events":
         query = query.filter(PlatformItem.item_type == "event")
     elif mode == "for_you":
-        # Logic: Filter by user interests set during onboarding
         user_interest_names = [i.name for i in current_user.interests]
         if user_interest_names:
             query = query.filter(PlatformItem.tags.has_any(user_interest_names))
@@ -949,25 +949,35 @@ async def execute_search(
     raw_results = query.all()
     processed_cards = []
     
+    # Get user's saved items to highlight the bookmark icon
+    saved_item_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
+
     for item in raw_results:
-        # Distance calculation is essential for 'Near you' mode
         dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
         
         # If user clicked 'Near You', exclude items further than 50km
         if mode == "near_you" and (dist is None or dist > 50):
             continue
 
+        # --- 2. ADD DATE LOGIC ---
+        display_date = item.date or item.created_at
+        formatted_date = display_date.strftime("%d %B, %Y") if display_date else None
+        
+        # --- 3. GET FULL IMAGE URL ---
+        absolute_image_url = get_full_url(api_request, item.image_url)
+
         processed_cards.append(HomeItemCard(
             id=item.id,
             item_type=item.item_type,
             name=item.name,
-            image_url=item.image_url,
+            image_url=absolute_image_url,
             category_name=item.category.name if item.category else "General",
-            price=item.price,
+            price=item.price or 0.0,
             distance_km=dist,
-            age_range="0-20 years", # Extracted from tags logic
+            age_range="0-20 years",
+            date_label=formatted_date, # <--- 4. THIS FIXES THE CRASH!
             is_recommended=True,
-            is_saved=False # Check SavedItem table
+            is_saved=(item.id in saved_item_ids)
         ))
 
     # E. Sorting
