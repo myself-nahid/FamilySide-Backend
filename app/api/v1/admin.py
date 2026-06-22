@@ -425,28 +425,56 @@ async def get_all_users_details(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """
-    Returns a list of all users (except the current admin) with their details.
-    """
+    # Fetch all users except the current admin
     users = db.query(User).filter(User.id != admin.id).all()
     
-    user_details_list = []
-    for u in users:
-        user_details_list.append(
-            UserDetailResponse(
-                id=u.id,
-                full_name=u.full_name,
-                email=u.email,
-                role=u.role or "Parent",
-                join_date=u.join_date.strftime("%d/%m/%Y") if u.join_date else "N/A",
-                location_name=u.location_name or "New work, UAS",
-                status=u.status or "Active",
-                subscription_plan=u.subscription_plan or "Free",
-                reviews_count=0  # Placeholder, replace with actual count if needed
-            )
-        )
+    response_data = []
     
-    return APIResponse(status="success", message="All user details fetched", data=user_details_list)
+    for user in users:
+        # 1. Calculate the missing metrics for this specific user
+        activities_created = db.query(PlatformItem).filter(
+            PlatformItem.creator_id == user.id, 
+            PlatformItem.item_type == "activity"
+        ).count()
+        
+        # You can query real tables for these if you want, using mock counts for now
+        mock_reviews = 0       
+        mock_saved = 0         
+        contributor_level = "Top 9%" 
+        
+        # 2. Map the children for this specific user
+        children_data = [
+            ChildResponse(
+                id=child.id,
+                name=child.name or "Unnamed",
+                dob=child.dob.strftime("%d/%m/%Y") if child.dob else "N/A",
+                gender=child.gender or "Male"
+            )
+            for child in user.children
+        ]
+        
+        # 3. Create the complete object with NO missing fields
+        response_data.append(UserDetailResponse(
+            id=user.id,
+            full_name=user.full_name,
+            email=user.email,
+            role=user.role or "Parent",
+            join_date=user.join_date.strftime("%d/%m/%Y") if user.join_date else "N/A",
+            location_name=user.location_name or "New work, UAS",
+            status=user.status or "Active",                      
+            subscription_plan=user.subscription_plan or "Free",  
+            reviews_count=mock_reviews,             
+            activities_count=activities_created,    
+            saved_items_count=mock_saved,           
+            contributor_level=contributor_level,    
+            children=children_data                  
+        ))
+        
+    return APIResponse(
+        status="success", 
+        message="All user details fetched", 
+        data=response_data
+    )
 
 
 # 2.2 DETAILED USER REVIEW MODAL
