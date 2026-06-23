@@ -1857,6 +1857,43 @@ async def update_admin_profile(
     )
     return APIResponse(status="success", message="Account information updated successfully", data=updated_detail)
 
+# Only admin profile picture update/change endpoint
+@router.patch("/settings/profile/image", response_model=APIResponse[AdminProfileResponse])
+async def update_admin_profile_image(
+    request: Request,
+    db: Session = Depends(get_db), 
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Updates the admin's profile picture.
+    """
+    form = await request.form()
+    image = form.get("image")
+    
+    if not image:
+        raise HTTPException(status_code=400, detail="No image file provided.")
+    
+    # Save the new profile image
+    upload_dir = "uploads/admins"
+    os.makedirs(upload_dir, exist_ok=True)
+    image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{image.filename}")
+    
+    with open(image_path, "wb") as f:
+        f.write(await image.read())
+    
+    # Update the admin's profile image URL in the database
+    admin.profile_image_url = image_path.replace("\\", "/")
+    db.commit()
+    
+    updated_detail = AdminProfileResponse(
+        name=admin.full_name,
+        image_url=get_full_url(request, admin.profile_image_url) if admin.profile_image_url else None,
+        email=admin.email,
+        phone_number=admin.phone_number
+    )
+    
+    return APIResponse(status="success", message="Profile picture updated successfully", data=updated_detail)
+
 
 @router.patch("/settings/security", response_model=APIResponse[None])
 async def update_admin_password(
