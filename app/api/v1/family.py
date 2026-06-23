@@ -864,6 +864,71 @@ async def toggle_save_item(
     return APIResponse(status="success", message=message, data={"is_saved": is_saved})
 
 
+@router.post("/saved-items/universal_toggle", response_model=APIResponse[dict])
+async def toggle_save_item(
+    payload: SaveItemRequest, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """
+    UNIVERSAL SAVE ENDPOINT: 
+    Handles saving/unsaving Activities, Events, and Gifts based purely on item_id.
+    """
+    # 1. Fetch the Item to verify it exists and find out what TYPE it is
+    item = db.query(PlatformItem).filter(PlatformItem.id == payload.item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # Format the item type for friendly UI messages (e.g. "Activity", "Event", "Gift")
+    i_type = item.item_type.capitalize()
+
+    # 2. Check if the User Gift List folder exists (if provided)
+    if payload.gift_list_id:
+        g_list = db.query(UserGiftList).filter(
+            UserGiftList.id == payload.gift_list_id, 
+            UserGiftList.user_id == current_user.id
+        ).first()
+        if not g_list:
+            raise HTTPException(status_code=404, detail="Gift list folder not found")
+
+    # 3. Check if the item is already saved by this user
+    existing_save = db.query(SavedItem).filter(
+        SavedItem.user_id == current_user.id, 
+        SavedItem.item_id == payload.item_id
+    ).first()
+
+    if existing_save:
+        # A. If they provided a list ID, they are moving it to a specific folder
+        if payload.gift_list_id and existing_save.gift_list_id != payload.gift_list_id:
+            existing_save.gift_list_id = payload.gift_list_id
+            message = f"{i_type} moved to folder"
+            is_saved = True
+        # B. If they just clicked the bookmark icon, REMOVE IT (Unsave)
+        else:
+            db.delete(existing_save)
+            message = f"{i_type} removed from saved items"
+            is_saved = False
+    else:
+        # C. It's not saved yet, so SAVE IT universally
+        new_save = SavedItem(
+            user_id=current_user.id, 
+            item_id=payload.item_id, 
+            gift_list_id=payload.gift_list_id # Can be None for general save
+        )
+        db.add(new_save)
+        message = f"{i_type} saved successfully"
+        is_saved = True
+    
+    db.commit()
+    
+    # Return the status and explicitly tell the frontend what type was just saved
+    return APIResponse(
+        status="success", 
+        message=message, 
+        data={"is_saved": is_saved, "item_type": item.item_type}
+    )
+
+
 # 1. SEARCH TAB INITIALIZATION 
 @router.get("/search/init", response_model=APIResponse[SearchTabInitResponse])
 async def init_search_tab(
