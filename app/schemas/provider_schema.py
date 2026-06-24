@@ -93,3 +93,12 @@ class ProviderItemDetailResponse(BaseModel):
 class ProviderDropdownItem(BaseModel):
     id: int
     name: str
+
+class AIFlyerExtractionResponse(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    date: Optional[str] = None        # Format: DD/MM/YYYY
+    start_time: Optional[str] = None  # Format: HH:MM AM/PM
+    location: Optional[str] = None
+    price: Optional[float] = 0.0
+    suggested_tags: List[str] = []

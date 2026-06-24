@@ -8,14 +8,19 @@ from app.models.core_data import AnalyticsLog, Category, PlatformItem, Notificat
 from app.schemas.auth_schema import APIResponse
 from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderDropdownItem, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderItemDetailResponse, ProviderProfileResponse
 from app.core.utils import calculate_distance_km, get_full_url
+from app.schemas.provider_schema import AIFlyerExtractionResponse
 from fastapi import Form, File, UploadFile
-from typing import List, Optional
+from app.core.config import settings
 from datetime import datetime, date
+from typing import List, Optional
+from openai import AsyncOpenAI
+import base64
 import random
-import os
 import shutil
 import json
+import os
 
+openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 router = APIRouter(prefix="/provider", tags=["Provider App - Home"])
 
@@ -503,6 +508,93 @@ async def provider_create_event(
     notify_admin(db, new_event, current_user.full_name)
 
     return APIResponse(status="success", message="Event submitted for approval!")
+
+# AI FLYER EXTRACTION ENGINE
+@router.post("/ai/parse-flyer", response_model=APIResponse[AIFlyerExtractionResponse])
+async def ai_parse_flyer(
+    flyer_image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Reads an uploaded promotional flyer using OpenAI Vision.
+    Extracts text, parses event details, and suggests taxonomy tags.
+    """
+    if not settings.OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OpenAI API key not configured.")
+
+    try:
+        # 1. Read and encode the image to Base64
+        image_bytes = await flyer_image.read()
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        mime_type = flyer_image.content_type or "image/jpeg"
+
+        # 2. Construct the strict JSON prompt for OpenAI
+        prompt = """
+        You are an AI assistant for a family and kids app. Extract the event/activity details from this flyer.
+        Return ONLY a raw JSON object with the following keys. Do not include markdown formatting like ```json.
+        - "name": Event or activity title.
+        - "description": Summary of the event.
+        - "date": Event date in DD/MM/YYYY format. If none, return null.
+        - "start_time": Start time in HH:MM AM/PM format. If none, return null.
+        - "location": Address or venue name.
+        - "price": Numeric cost. If it says 'Free', return 0.0. Remove currency symbols.
+        - "suggested_tags": Array of 2 to 4 relevant tags (e.g., ["Music", "Indoor", "Toddler", "Education", "Sports"]).
+        """
+
+        # 3. Call OpenAI gpt-4o (Vision capable)
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o",
+            response_format={"type": "json_object"}, # <--- ADD THIS LINE: Forces strict JSON output
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}
+                        }
+                    ]
+                }
+            ],
+            max_tokens=500,
+            temperature=0.2 
+        )
+
+        # 4. Parse the AI Response
+        ai_raw_text = response.choices[0].message.content.strip()
+        
+        # --- DEBUGGING: Print exactly what AI returned to the terminal ---
+        print(f"\n--- RAW AI RESPONSE ---\n{ai_raw_text}\n-----------------------\n")
+        
+        # Clean up markdown if OpenAI still wraps it in ```json ... ```
+        if ai_raw_text.startswith("```"):
+            lines = ai_raw_text.split('\n')
+            # Remove the first line (e.g., ```json) and the last line (```)
+            if lines[0].startswith("```"): lines = lines[1:]
+            if lines[-1].startswith("```"): lines = lines[:-1]
+            ai_raw_text = '\n'.join(lines).strip()
+
+        extracted_data = json.loads(ai_raw_text)
+
+        # 5. Format to our Schema
+        data = AIFlyerExtractionResponse(
+            name=extracted_data.get("name"),
+            description=extracted_data.get("description"),
+            date=extracted_data.get("date"),
+            start_time=extracted_data.get("start_time"),
+            location=extracted_data.get("location"),
+            price=float(extracted_data.get("price") or 0.0),
+            suggested_tags=extracted_data.get("suggested_tags", [])
+        )
+
+        return APIResponse(status="success", message="Flyer parsed successfully", data=data)
+
+    except json.JSONDecodeError as e:
+        # If it STILL fails, this print will tell us exactly why in the terminal
+        print(f"JSON Parsing Failed! AI Output was: {ai_raw_text}")
+        raise HTTPException(status_code=500, detail="AI failed to return valid data. Please enter details manually.")
 
 # 3. CREATE GIFT
 @router.post("/create/gift", response_model=APIResponse[None])

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS", "True").lower() == "true"
     MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS", "False").lower() == "true"
     MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME", "FamilySide")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
     base_url: str = os.getenv("base_url")
 
     class Config:
