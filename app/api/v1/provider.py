@@ -527,12 +527,23 @@ async def ai_parse_flyer(
         # 1. Read and encode the image to Base64
         image_bytes = await flyer_image.read()
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        mime_type = flyer_image.content_type or "image/jpeg"
+        
+        # OpenAI only accepts specific formats. If Postman sends a weird type, we fix it.
+        allowed_mimes = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+        mime_type = flyer_image.content_type
+        
+        if mime_type not in allowed_mimes:
+            # Guess from file extension
+            ext = flyer_image.filename.split(".")[-1].lower() if flyer_image.filename else "jpg"
+            if ext == "png": mime_type = "image/png"
+            elif ext == "webp": mime_type = "image/webp"
+            elif ext == "gif": mime_type = "image/gif"
+            else: mime_type = "image/jpeg" 
 
         # 2. Construct the strict JSON prompt for OpenAI
         prompt = """
         You are an AI assistant for a family and kids app. Extract the event/activity details from this flyer.
-        Return ONLY a raw JSON object with the following keys. Do not include markdown formatting like ```json.
+        Return ONLY a raw JSON object with the following keys. Do not include markdown formatting.
         - "name": Event or activity title.
         - "description": Summary of the event.
         - "date": Event date in DD/MM/YYYY format. If none, return null.
@@ -545,7 +556,7 @@ async def ai_parse_flyer(
         # 3. Call OpenAI gpt-4o (Vision capable)
         response = await openai_client.chat.completions.create(
             model="gpt-4o",
-            response_format={"type": "json_object"}, # <--- ADD THIS LINE: Forces strict JSON output
+            response_format={"type": "json_object"}, 
             messages=[
                 {
                     "role": "user",
@@ -564,14 +575,11 @@ async def ai_parse_flyer(
 
         # 4. Parse the AI Response
         ai_raw_text = response.choices[0].message.content.strip()
-        
-        # --- DEBUGGING: Print exactly what AI returned to the terminal ---
         print(f"\n--- RAW AI RESPONSE ---\n{ai_raw_text}\n-----------------------\n")
         
-        # Clean up markdown if OpenAI still wraps it in ```json ... ```
+        # Clean up markdown if OpenAI still wraps it
         if ai_raw_text.startswith("```"):
             lines = ai_raw_text.split('\n')
-            # Remove the first line (e.g., ```json) and the last line (```)
             if lines[0].startswith("```"): lines = lines[1:]
             if lines[-1].startswith("```"): lines = lines[:-1]
             ai_raw_text = '\n'.join(lines).strip()
@@ -591,10 +599,12 @@ async def ai_parse_flyer(
 
         return APIResponse(status="success", message="Flyer parsed successfully", data=data)
 
-    except json.JSONDecodeError as e:
-        # If it STILL fails, this print will tell us exactly why in the terminal
+    except json.JSONDecodeError:
         print(f"JSON Parsing Failed! AI Output was: {ai_raw_text}")
         raise HTTPException(status_code=500, detail="AI failed to return valid data. Please enter details manually.")
+    except Exception as e:
+        print(f"AI Parse Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process the flyer image.")
 
 # 3. CREATE GIFT
 @router.post("/create/gift", response_model=APIResponse[None])
