@@ -545,15 +545,19 @@ async def ai_parse_flyer(
 
         # 2. Construct the strict JSON prompt for OpenAI
         prompt = """
-        You are an AI assistant for a family and kids app. Extract the event/activity details from this flyer.
-        Return ONLY a raw JSON object with the following keys. Do not include markdown formatting.
-        - "name": Event or activity title.
-        - "description": Summary of the event.
-        - "date": Event date in DD/MM/YYYY format. If none, return null.
-        - "start_time": Start time in HH:MM AM/PM format. If none, return null.
-        - "location": Address or venue name.
-        - "price": Numeric cost. If it says 'Free', return 0.0. Remove currency symbols.
+        You are an AI assistant for a family and kids app. Your job is to extract data from this image/flyer.
+        Read ALL the text on the image. Even if the data is messy, try your best to extract it.
+        Return ONLY a raw JSON object with the exact keys below.
+        
+        - "name": The title of the event or activity. (If no title is obvious, use the largest text).
+        - "description": A summary of what this is, or just extract the main body text you see.
+        - "date": Event date in DD/MM/YYYY format. If no date is found, return null.
+        - "start_time": Start time in HH:MM AM/PM format. If no time is found, return null.
+        - "location": The address, venue name, or city mentioned. If none, return null.
+        - "price": The numeric cost. If it says 'Free', return 0.0. Remove currency symbols like $. If no price is mentioned, return null.
         - "suggested_tags": Array of 2 to 4 relevant tags (e.g., ["Music", "Indoor", "Toddler", "Education", "Sports"]).
+        
+        If you cannot find an exact match for a field, try to infer it from the context before returning null.
         """
 
         # 3. Call OpenAI gpt-4o (Vision capable)
