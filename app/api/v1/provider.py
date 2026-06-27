@@ -9,6 +9,9 @@ from app.schemas.auth_schema import APIResponse
 from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderDropdownItem, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderItemDetailResponse, ProviderProfileResponse
 from app.core.utils import calculate_distance_km, get_full_url
 from app.schemas.provider_schema import AIFlyerExtractionResponse
+from app.models.core_data import Notification
+from app.schemas.family_schema import NotificationListResponse, NotificationGroup, NotificationItem
+from datetime import timedelta
 from fastapi import Form, File, UploadFile
 from app.core.config import settings
 from datetime import datetime, date
@@ -859,3 +862,88 @@ async def update_provider_profile(
     db.commit()
     
     return APIResponse(status="success", message="Profile updated successfully")
+
+# NOTIFICATIONS
+# Helper to format time (e.g. "5min ago", "3 days ago")
+def get_time_ago(dt: datetime):
+    now = datetime.utcnow()
+    diff = now - dt
+    if diff.days == 0:
+        if diff.seconds < 3600: return f"{diff.seconds // 60}min ago"
+        return f"{diff.seconds // 3600}h ago"
+    if diff.days < 7: return f"{diff.days} days ago"
+    return dt.strftime("%d %b")
+
+@router.get("/notifications", response_model=APIResponse[NotificationListResponse])
+async def get_provider_notifications(
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Fetches and groups notifications for the Provider Dashboard"""
+    if current_user.user_type != "provider":
+        raise HTTPException(status_code=403, detail="Not authorized as a provider")
+        
+    notifications = db.query(Notification).filter(
+        Notification.user_id == current_user.id
+    ).order_by(Notification.created_at.desc()).all()
+
+    unread_count = db.query(Notification).filter(
+        Notification.user_id == current_user.id, 
+        Notification.is_read == False
+    ).count()
+
+    # Initialize buckets for UI
+    today_items = []
+    week_items = []
+    month_items = []
+
+    now = datetime.utcnow()
+    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_week = now - timedelta(days=7)
+
+    for n in notifications:
+        item = NotificationItem(
+            id=n.id,
+            title=n.title,
+            subtitle=n.subtitle,
+            time_ago=get_time_ago(n.created_at),
+            is_read=n.is_read,
+            item_type=n.item_type,
+            item_id=n.item_id
+        )
+
+        if n.created_at >= start_of_today:
+            today_items.append(item)
+        elif n.created_at >= start_of_week:
+            week_items.append(item)
+        else:
+            month_items.append(item)
+
+    # Build Response Groups
+    groups = []
+    if today_items: groups.append(NotificationGroup(group_name="Today", notifications=today_items))
+    if week_items: groups.append(NotificationGroup(group_name="This week", notifications=week_items))
+    if month_items: groups.append(NotificationGroup(group_name="Last month", notifications=month_items))
+
+    return APIResponse(
+        status="success", 
+        message="Notifications loaded",
+        data=NotificationListResponse(unread_count=unread_count, groups=groups)
+    )
+
+@router.patch("/notifications/mark-all-read", response_model=APIResponse[None])
+async def mark_all_provider_notifications_read(
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Marks all notifications as read when the user opens the notification screen"""
+    if current_user.user_type != "provider":
+        raise HTTPException(status_code=403, detail="Not authorized as a provider")
+        
+    db.query(Notification).filter(
+        Notification.user_id == current_user.id, 
+        Notification.is_read == False
+    ).update({"is_read": True})
+    
+    db.commit()
+    return APIResponse(status="success", message="All notifications marked as read")
