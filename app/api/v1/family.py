@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from typing import List, Optional
@@ -26,6 +26,8 @@ from app.core.config import settings
 from jose import jwt, JWTError
 import os
 import shutil
+
+from app.services.email_service import send_support_alert_to_admin
 
 router = APIRouter(prefix="/family", tags=["Family App - Home"])
 
@@ -1681,8 +1683,13 @@ async def get_my_reviews_list(db: Session = Depends(get_db), current_user: User 
 
 # 3. CONTACT SUPPORT & SUGGESTIONS 
 @router.post("/profile/support", response_model=APIResponse[None])
-async def submit_support_ticket(payload: SupportRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Matches 'Contact Support' (Image 2)"""
+async def submit_support_ticket(
+    payload: SupportRequest, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Save to Database
     msg = SupportMessage(
         user_id=current_user.id,
         email=payload.email,
@@ -1691,6 +1698,10 @@ async def submit_support_ticket(payload: SupportRequest, db: Session = Depends(g
     )
     db.add(msg)
     db.commit()
+
+    # 2. Alert the Support Team via Email
+    background_tasks.add_task(send_support_alert_to_admin, payload.email, payload.problem_details)
+
     return APIResponse(status="success", message="Your query has been submitted. We will contact you soon.")
 
 @router.get("/profile/suggestions", response_model=APIResponse[dict])

@@ -6,7 +6,7 @@ from sqlalchemy import func
 from app.api.deps import get_db, get_current_admin
 from app.core.utils import get_full_url
 from app.models.user import User, Child
-from app.models.core_data import PlatformItem, Category
+from app.models.core_data import PlatformItem, Category, SupportMessage
 from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_
@@ -1919,3 +1919,32 @@ async def update_admin_password(
     db.commit()
     
     return APIResponse(status="success", message="Security password updated successfully")
+
+@router.get("/support/tickets", response_model=APIResponse[dict])
+async def list_support_tickets(
+    page: int = 1, 
+    limit: int = 10, 
+    db: Session = Depends(get_db), 
+    admin: User = Depends(get_current_admin)
+):
+    """Allows Admin to see all user problems submitted via the app"""
+    query = db.query(SupportMessage)
+    total = query.count()
+    tickets = query.order_by(SupportMessage.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    
+    return APIResponse(
+        status="success", 
+        message="Support tickets fetched", 
+        data={"total": total, "items": tickets}
+    )
+
+@router.patch("/support/tickets/{ticket_id}/resolve")
+async def resolve_ticket(ticket_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Marks a problem as fixed/resolved"""
+    ticket = db.query(SupportMessage).filter(SupportMessage.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    
+    ticket.status = "resolved"
+    db.commit()
+    return {"message": "Ticket marked as resolved"}

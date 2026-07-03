@@ -50,3 +50,20 @@ async def send_signup_otp_email(email_to: str, otp: str):
     )
     fm = FastMail(conf)
     await fm.send_message(message)
+
+async def send_support_alert_to_admin(user_email: str, problem: str):
+    html = f"""
+    <h3>New Support Request Received</h3>
+    <p><b>From:</b> {user_email}</p>
+    <p><b>Issue:</b> {problem}</p>
+    <hr>
+    <p>Please log in to the Admin Dashboard to reply to this user.</p>
+    """
+    message = MessageSchema(
+        subject=f"URGENT: Support Request from {user_email}",
+        recipients=[settings.MAIL_USERNAME], # Sends the alert to YOUR email
+        body=html,
+        subtype=MessageType.html
+    )
+    fm = FastMail(conf)
+    await fm.send_message(message)
