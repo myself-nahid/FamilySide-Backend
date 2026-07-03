@@ -15,6 +15,7 @@ from app.models.core_data import Review
 from app.models.core_data import SupportMessage, Review, PlatformItem
 from app.schemas.family_schema import FullProfileResponse, UserProfileMetrics, ProfileUpdateRequest, SupportRequest, UserReviewItem
 from app.schemas.family_schema import MyChildrenProfileResponse, ChildDetailInfo, UpdateChildrenProfileRequest
+from app.core.utils import get_dynamic_time_ago
 from app.models.user import Child
 from datetime import datetime, timedelta
 from app.core.utils import calculate_distance_km
@@ -1269,14 +1270,27 @@ async def get_my_gift_folders(
             is_saved=True
         ))
 
-    data = [
-        GiftListFolderResponse(
-            id=f.id, name=f.name, occasion=f.occasion or "General",
+    # data = [
+    #     GiftListFolderResponse(
+    #         id=f.id, name=f.name, occasion=f.occasion or "General",
+    #         items_count=len(f.saved_items),
+    #         image_url=get_full_url(api_request, f.image_url) if f.image_url else None,
+    #         last_updated_label="Last updated 2 days ago"
+    #     ) for f in folders
+    # ]
+    data = []
+    for f in folders:
+        # Generate the dynamic label using our helper
+        time_label = f"Last updated {get_dynamic_time_ago(f.updated_at)}"
+        
+        data.append(GiftListFolderResponse(
+            id=f.id, 
+            name=f.name, 
+            occasion=f.occasion or "General",
             items_count=len(f.saved_items),
             image_url=get_full_url(api_request, f.image_url) if f.image_url else None,
-            last_updated_label="Last updated 2 days ago"
-        ) for f in folders
-    ]
+            last_updated_label=time_label 
+        ))
     
     return APIResponse(
         status="success",
@@ -1400,6 +1414,10 @@ async def add_item_to_folder(payload: AddToGiftListRequest, db: Session = Depend
         db.add(saved_item)
 
     saved_item.gift_list_id = payload.gift_list_id
+    # 2. TRIGGER DYNAMIC UPDATE: Manually update the folder's timestamp
+    folder = db.query(UserGiftList).filter(UserGiftList.id == payload.gift_list_id).first()
+    if folder:
+        folder.updated_at = datetime.utcnow()
     db.commit()
     return APIResponse(status="success", message="Gift added to your list")
 

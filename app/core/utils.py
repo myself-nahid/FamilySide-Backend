@@ -1,3 +1,4 @@
+from datetime import datetime
 import math
 from fastapi import Request
 from typing import Optional
@@ -50,3 +51,30 @@ def get_full_url(request: Request, path: Optional[str]) -> Optional[str]:
         base_url = base_url.replace("https://", "http://")
 
     return f"{base_url}{clean_path}"
+
+def get_dynamic_time_ago(dt: datetime) -> str:
+    """
+    Converts a datetime into a dynamic string like '5 minutes ago' or '2 days ago'.
+    """
+    if not dt:
+        return "Never updated"
+        
+    now = datetime.utcnow()
+    diff = now - dt
+
+    if diff.days == 0:
+        if diff.seconds < 60:
+            return "just now"
+        if diff.seconds < 3600:
+            minutes = diff.seconds // 60
+            return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+        hours = diff.seconds // 3600
+        return f"{hours} hour{'s' if hours > 1 else ''} ago"
+        
+    if diff.days == 1:
+        return "yesterday"
+    
+    if diff.days < 30:
+        return f"{diff.days} days ago"
+        
+    return dt.strftime("%d %b %Y")
