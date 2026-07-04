@@ -57,6 +57,7 @@ cors_origins = [
     "http://10.10.29.70:5173",
     "https://familyside.netlify.app/",
     "https://familyside.netlify.app",
+    "https://dashboard.familyside.it",
 ]
 
 app.add_middleware(
