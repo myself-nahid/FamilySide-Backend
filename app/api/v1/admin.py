@@ -990,6 +990,7 @@ async def bulk_upload_activities(
                     opening_hours=row['opening_hours'],
                     sub_categories=format_list(row['sub_categories']),
                     tags=format_list(row['tags']),
+                    image_url=str(row['image_url']) if row['image_url'] else None,
                     creator_id=admin.id,
                     status="approved" # Admin bulk uploads are auto-approved
                 )
