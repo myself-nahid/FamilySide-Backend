@@ -10,6 +10,8 @@ from app.models.core_data import PlatformItem, Category, SupportMessage
 from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_
+import pandas as pd
+from io import BytesIO
 import os
 import shutil
 import json
@@ -930,6 +932,83 @@ async def create_activity(
         pass
     
     return APIResponse(status="success", message="Activity created successfully with photo!")
+
+@router.post("/activities/bulk-upload", response_model=APIResponse[dict])
+async def bulk_upload_activities(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Accepts an Excel (.xlsx) file and creates multiple activities.
+    Ensures data validation and handles comma-separated tags/sub-categories.
+    """
+    # 1. Validate File Extension
+    if not file.filename.endswith('.xlsx'):
+        raise HTTPException(status_code=400, detail="Only .xlsx files are supported.")
+
+    try:
+        # 2. Read Excel file using Pandas
+        contents = await file.read()
+        df = pd.read_excel(BytesIO(contents))
+        
+        # Replace NaN (empty Excel cells) with None for Python compatibility
+        df = df.where(pd.notnull(df), None)
+
+        success_count = 0
+        errors = []
+
+        # 3. Iterate through rows
+        for index, row in df.iterrows():
+            try:
+                # Validation: Ensure Category exists
+                cat_id = int(row['category_id'])
+                category = db.query(Category).filter(Category.id == cat_id).first()
+                if not category:
+                    errors.append(f"Row {index+2}: Category ID {cat_id} not found.")
+                    continue
+
+                # Process comma-separated tags/sub-categories into JSON lists
+                def format_list(val):
+                    if not val: return []
+                    return [item.strip() for item in str(val).split(',')]
+
+                new_activity = PlatformItem(
+                    item_type="activity",
+                    name=str(row['name']),
+                    description=str(row['description']),
+                    category_id=cat_id,
+                    location=str(row['location']),
+                    lat=float(row['lat']) if row['lat'] else None,
+                    lng=float(row['lng']) if row['lng'] else None,
+                    price=float(row['price']) if row['price'] else 0.0,
+                    website=row['website'],
+                    whatsapp=str(row['whatsapp']) if row['whatsapp'] else None,
+                    email=row['email'],
+                    instagram=row['instagram'],
+                    opening_days=row['opening_days'],
+                    opening_hours=row['opening_hours'],
+                    sub_categories=format_list(row['sub_categories']),
+                    tags=format_list(row['tags']),
+                    creator_id=admin.id,
+                    status="approved" # Admin bulk uploads are auto-approved
+                )
+                db.add(new_activity)
+                success_count += 1
+
+            except Exception as e:
+                errors.append(f"Row {index+2}: Internal error - {str(e)}")
+
+        db.commit()
+
+        return APIResponse(
+            status="success", 
+            message=f"Import complete. {success_count} activities added.",
+            data={"success_count": success_count, "errors": errors}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
 
 # 4.4 DELETE ACTIVITY 
 @router.delete("/activities/{activity_id}", response_model=APIResponse[None])

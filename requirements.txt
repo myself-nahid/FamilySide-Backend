@@ -15,3 +15,5 @@ httpx
 requests
 fastapi-mail
 openai
+pandas 
+openpyxl
