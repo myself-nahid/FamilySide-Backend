@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME", "FamilySide")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
     base_url: str = os.getenv("base_url")
+    GOOGLE_MAPS_API_KEY: str = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
     class Config:
         case_sensitive = True

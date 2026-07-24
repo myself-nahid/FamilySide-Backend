@@ -29,6 +29,8 @@ from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, Taxono
 from app.models.core_data import Notification
 from app.core.security import get_password_hash, verify_password
 from typing import List
+import googlemaps
+from app.core.config import settings
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 
@@ -933,101 +935,218 @@ async def create_activity(
     
     return APIResponse(status="success", message="Activity created successfully with photo!")
 
+# @router.post("/activities/bulk-upload", response_model=APIResponse[dict])
+# async def bulk_upload_activities(
+#     file: UploadFile = File(...),
+#     db: Session = Depends(get_db),
+#     admin: User = Depends(get_current_admin)
+# ):
+#     """
+#     Production-grade Bulk Upload with Duplicate Handling and Row-level validation.
+#     """
+#     if not file.filename.endswith('.xlsx'):
+#         raise HTTPException(status_code=400, detail="Only .xlsx files are supported.")
+
+#     try:
+#         contents = await file.read()
+#         df = pd.read_excel(BytesIO(contents))
+        
+#         # Replace NaN with None for database compatibility
+#         df = df.where(pd.notnull(df), None)
+
+#         success_count = 0
+#         update_count = 0
+#         errors = []
+        
+#         # Default image path for activities
+#         DEFAULT_IMAGE = "uploads/defaults/default_activity.png"
+
+#         for index, row in df.iterrows():
+#             # index + 2 because Excel starts at 1 and has a header row
+#             row_num = index + 2 
+            
+#             try:
+#                 # 1. VALIDATION: Check required fields
+#                 if not row.get('name') or not row.get('location'):
+#                     errors.append(f"Row {row_num}: Missing required Name or Location.")
+#                     continue
+
+#                 # 2. VALIDATION: Ensure Category exists
+#                 cat_id = int(row['category_id']) if row.get('category_id') else None
+#                 if not cat_id:
+#                     errors.append(f"Row {row_num}: Missing category_id.")
+#                     continue
+                    
+#                 category = db.query(Category).filter(Category.id == cat_id).first()
+#                 if not category:
+#                     errors.append(f"Row {row_num}: Category ID {cat_id} not found in database.")
+#                     continue
+
+#                 # 3. HELPER: Format comma-separated strings for JSONB
+#                 def format_list(val):
+#                     if not val: return []
+#                     return [item.strip() for item in str(val).split(',')]
+
+#                 # 4. DUPLICATE CHECK: Does this Name + Location already exist?
+#                 existing_item = db.query(PlatformItem).filter(
+#                     PlatformItem.name == str(row['name']).strip(),
+#                     PlatformItem.location == str(row['location']).strip(),
+#                     PlatformItem.item_type == "activity"
+#                 ).first()
+
+#                 # 5. IMAGE HANDLING
+#                 raw_img = row.get('image_url')
+#                 final_image_path = str(raw_img).strip().replace("\\", "/") if raw_img else DEFAULT_IMAGE
+
+#                 if existing_item:
+#                     # SCENARIO: UPDATE EXISTING (Duplicate Handling)
+#                     existing_item.description = str(row.get('description', ''))
+#                     existing_item.category_id = cat_id
+#                     existing_item.price = float(row.get('price', 0.0))
+#                     existing_item.website = row.get('website')
+#                     existing_item.whatsapp = str(row.get('whatsapp')) if row.get('whatsapp') else None
+#                     existing_item.email = row.get('email')
+#                     existing_item.instagram = row.get('instagram')
+#                     existing_item.opening_days = row.get('opening_days')
+#                     existing_item.opening_hours = row.get('opening_hours')
+#                     existing_item.sub_categories = format_list(row.get('sub_categories'))
+#                     existing_item.tags = format_list(row.get('tags'))
+#                     existing_item.image_url = final_image_path
+#                     update_count += 1
+#                 else:
+#                     # SCENARIO: CREATE NEW
+#                     new_activity = PlatformItem(
+#                         item_type="activity",
+#                         name=str(row['name']).strip(),
+#                         description=str(row.get('description', '')),
+#                         category_id=cat_id,
+#                         location=str(row['location']).strip(),
+#                         lat=float(row['lat']) if row.get('lat') else None,
+#                         lng=float(row['lng']) if row.get('lng') else None,
+#                         price=float(row.get('price', 0.0)),
+#                         website=row.get('website'),
+#                         whatsapp=str(row.get('whatsapp')) if row.get('whatsapp') else None,
+#                         email=row.get('email'),
+#                         instagram=row.get('instagram'),
+#                         opening_days=row.get('opening_days'),
+#                         opening_hours=row.get('opening_hours'),
+#                         sub_categories=format_list(row.get('sub_categories')),
+#                         tags=format_list(row.get('tags')),
+#                         image_url=final_image_path,
+#                         creator_id=admin.id,
+#                         status="approved"
+#                     )
+#                     db.add(new_activity)
+#                     success_count += 1
+
+#             except Exception as e:
+#                 errors.append(f"Row {row_num}: Data error - {str(e)}")
+
+#         db.commit()
+
+#         return APIResponse(
+#             status="success", 
+#             message=f"Processing complete: {success_count} added, {update_count} updated.",
+#             data={
+#                 "new_added": success_count,
+#                 "updated": update_count,
+#                 "failed": len(errors),
+#                 "errors": errors 
+#             }
+#         )
+
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+
 @router.post("/activities/bulk-upload", response_model=APIResponse[dict])
 async def bulk_upload_activities(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """
-    Production-grade Bulk Upload with Duplicate Handling and Row-level validation.
-    """
     if not file.filename.endswith('.xlsx'):
         raise HTTPException(status_code=400, detail="Only .xlsx files are supported.")
+
+    # Initialize Google Maps Client
+    gmaps = None
+    if settings.GOOGLE_MAPS_API_KEY:
+        gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
 
     try:
         contents = await file.read()
         df = pd.read_excel(BytesIO(contents))
         
-        # Replace NaN with None for database compatibility
+        # 1. Typo-proofing and Header Cleaning
+        column_mapping = {'ing': 'lng', 'Name': 'name', 'Location': 'location'}
+        df.rename(columns=column_mapping, inplace=True)
         df = df.where(pd.notnull(df), None)
 
         success_count = 0
         update_count = 0
         errors = []
-        
-        # Default image path for activities
         DEFAULT_IMAGE = "uploads/defaults/default_activity.png"
 
         for index, row in df.iterrows():
-            # index + 2 because Excel starts at 1 and has a header row
             row_num = index + 2 
-            
             try:
-                # 1. VALIDATION: Check required fields
+                # Basic Validation
                 if not row.get('name') or not row.get('location'):
-                    errors.append(f"Row {row_num}: Missing required Name or Location.")
+                    errors.append(f"Row {row_num}: Missing Name or Location.")
                     continue
 
-                # 2. VALIDATION: Ensure Category exists
                 cat_id = int(row['category_id']) if row.get('category_id') else None
                 if not cat_id:
                     errors.append(f"Row {row_num}: Missing category_id.")
                     continue
-                    
-                category = db.query(Category).filter(Category.id == cat_id).first()
-                if not category:
-                    errors.append(f"Row {row_num}: Category ID {cat_id} not found in database.")
-                    continue
 
-                # 3. HELPER: Format comma-separated strings for JSONB
+                lat_val = row.get('lat')
+                lng_val = row.get('lng')
+                address = str(row['location']).strip()
+
+                # If coordinates are missing, fetch them from Google
+                if (not lat_val or not lng_val) and address and gmaps:
+                    try:
+                        geocode_result = gmaps.geocode(address)
+                        if geocode_result:
+                            loc = geocode_result[0]['geometry']['location']
+                            lat_val = loc['lat']
+                            lng_val = loc['lng']
+                    except Exception as geo_err:
+                        print(f"Geocoding failed for row {row_num}: {geo_err}")
+
+                # Duplicate Check
+                existing_item = db.query(PlatformItem).filter(
+                    PlatformItem.name == str(row['name']).strip(),
+                    PlatformItem.location == address,
+                    PlatformItem.item_type == "activity"
+                ).first()
+
                 def format_list(val):
                     if not val: return []
                     return [item.strip() for item in str(val).split(',')]
 
-                # 4. DUPLICATE CHECK: Does this Name + Location already exist?
-                existing_item = db.query(PlatformItem).filter(
-                    PlatformItem.name == str(row['name']).strip(),
-                    PlatformItem.location == str(row['location']).strip(),
-                    PlatformItem.item_type == "activity"
-                ).first()
-
-                # 5. IMAGE HANDLING
                 raw_img = row.get('image_url')
                 final_image_path = str(raw_img).strip().replace("\\", "/") if raw_img else DEFAULT_IMAGE
 
                 if existing_item:
-                    # SCENARIO: UPDATE EXISTING (Duplicate Handling)
+                    # Update Existing
+                    existing_item.lat = lat_val
+                    existing_item.lng = lng_val
                     existing_item.description = str(row.get('description', ''))
-                    existing_item.category_id = cat_id
                     existing_item.price = float(row.get('price', 0.0))
-                    existing_item.website = row.get('website')
-                    existing_item.whatsapp = str(row.get('whatsapp')) if row.get('whatsapp') else None
-                    existing_item.email = row.get('email')
-                    existing_item.instagram = row.get('instagram')
-                    existing_item.opening_days = row.get('opening_days')
-                    existing_item.opening_hours = row.get('opening_hours')
-                    existing_item.sub_categories = format_list(row.get('sub_categories'))
-                    existing_item.tags = format_list(row.get('tags'))
                     existing_item.image_url = final_image_path
                     update_count += 1
                 else:
-                    # SCENARIO: CREATE NEW
+                    # Create New
                     new_activity = PlatformItem(
                         item_type="activity",
                         name=str(row['name']).strip(),
-                        description=str(row.get('description', '')),
+                        location=address,
+                        lat=lat_val,
+                        lng=lng_val,
                         category_id=cat_id,
-                        location=str(row['location']).strip(),
-                        lat=float(row['lat']) if row.get('lat') else None,
-                        lng=float(row['lng']) if row.get('lng') else None,
                         price=float(row.get('price', 0.0)),
-                        website=row.get('website'),
-                        whatsapp=str(row.get('whatsapp')) if row.get('whatsapp') else None,
-                        email=row.get('email'),
-                        instagram=row.get('instagram'),
-                        opening_days=row.get('opening_days'),
-                        opening_hours=row.get('opening_hours'),
+                        description=str(row.get('description', '')),
                         sub_categories=format_list(row.get('sub_categories')),
                         tags=format_list(row.get('tags')),
                         image_url=final_image_path,
@@ -1038,23 +1157,17 @@ async def bulk_upload_activities(
                     success_count += 1
 
             except Exception as e:
-                errors.append(f"Row {row_num}: Data error - {str(e)}")
+                errors.append(f"Row {row_num}: {str(e)}")
 
         db.commit()
-
         return APIResponse(
             status="success", 
-            message=f"Processing complete: {success_count} added, {update_count} updated.",
-            data={
-                "new_added": success_count,
-                "updated": update_count,
-                "failed": len(errors),
-                "errors": errors 
-            }
+            message=f"Import complete: {success_count} added, {update_count} updated.",
+            data={"new": success_count, "updated": update_count, "errors": errors}
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"File error: {str(e)}")
 
 # 4.4 DELETE ACTIVITY 
 @router.delete("/activities/{activity_id}", response_model=APIResponse[None])
