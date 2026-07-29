@@ -284,4 +284,4 @@ class LegalDocumentRequest(BaseModel):
 class LegalDocumentResponse(BaseModel):
     document_type: str
     content: str
-    updated_at: datetime
+    updated_at: datetime.datetime
