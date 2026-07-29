@@ -100,6 +100,7 @@ class ItemDetailFullResponse(BaseModel):
     gift_ideas: List[HomeItemCard]
     reviews: List[ReviewResponse]
     average_rating_label: str # e.g. "Recommended"
+    is_saved: bool 
 
 class GiftListCreate(BaseModel):
     name: str
