@@ -22,6 +22,7 @@ import random
 import shutil
 import json
 import os
+import googlemaps
 
 openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -306,6 +307,26 @@ async def update_provider_item(
     try: item.tags = json.loads(tags)
     except: item.tags = [tags]
 
+    # If location was updated, attempt to geocode and update lat/lng
+    if location:
+        gmaps = None
+        if settings.GOOGLE_MAPS_API_KEY:
+            try:
+                gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
+            except Exception:
+                gmaps = None
+
+        if gmaps:
+            try:
+                res = gmaps.geocode(location)
+                if res:
+                    loc = res[0].get('geometry', {}).get('location')
+                    if loc:
+                        item.lat = loc.get('lat')
+                        item.lng = loc.get('lng')
+            except Exception:
+                pass
+
     db.commit()
     
     return APIResponse(status="success", message=f"{item.item_type.capitalize()} updated successfully")
@@ -376,12 +397,27 @@ async def provider_create_activity(
         image_url = path.replace("\\", "/")
 
     # 2. Map all fields to the Model
+    # If lat/lng not provided, attempt geocoding (best-effort)
+    lat_val = lat
+    lng_val = lng
+    if (not lat_val or not lng_val) and location and settings.GOOGLE_MAPS_API_KEY:
+        try:
+            gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
+            geocode_res = gmaps.geocode(location)
+            if geocode_res:
+                geom = geocode_res[0].get('geometry', {}).get('location')
+                if geom:
+                    lat_val = geom.get('lat')
+                    lng_val = geom.get('lng')
+        except Exception:
+            pass
+
     new_item = PlatformItem(
         item_type="activity",
         name=name,
         location=location,
-        lat=lat, 
-        lng=lng,
+        lat=lat_val, 
+        lng=lng_val,
         category_id=category_id,
         price=price,
         description=description,

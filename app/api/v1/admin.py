@@ -902,10 +902,36 @@ async def create_activity(
         except: parsed_tags = [tags]
 
     # 3. Save to Database
+    # Initialize Google Maps client (optional)
+    gmaps = None
+    if settings.GOOGLE_MAPS_API_KEY:
+        try:
+            gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
+        except Exception:
+            gmaps = None
+
+    # Attempt to geocode the provided `location` if possible
+    lat_val = None
+    lng_val = None
+    if location and gmaps:
+        try:
+            geocode_result = gmaps.geocode(location)
+            if geocode_result:
+                loc = geocode_result[0].get('geometry', {}).get('location')
+                if loc:
+                    lat_val = loc.get('lat')
+                    lng_val = loc.get('lng')
+        except Exception:
+            # Fail silently — geocoding is best-effort
+            lat_val = None
+            lng_val = None
+
     new_activity = PlatformItem(
         item_type="activity",
         name=name,
         location=location,
+        lat=lat_val,
+        lng=lng_val,
         category_id=category_id,
         price=price,
         description=description,
