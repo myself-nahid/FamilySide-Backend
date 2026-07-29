@@ -27,6 +27,7 @@ from app.core.config import settings
 from jose import jwt, JWTError
 import os
 import shutil
+import googlemaps
 
 from app.services.email_service import send_support_alert_to_admin
 
@@ -615,6 +616,24 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
     gift_ideas = [map_to_card(g) for g in gifts]
 
     # Formatted Response
+    # If coordinates are missing, attempt a best-effort geocode and persist
+    if (not item.lat or not item.lng) and item.location and settings.GOOGLE_MAPS_API_KEY:
+        try:
+            gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
+            res = gmaps.geocode(item.location)
+            if res:
+                loc = res[0].get('geometry', {}).get('location')
+                if loc:
+                    item.lat = loc.get('lat')
+                    item.lng = loc.get('lng')
+                    try:
+                        db.add(item)
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+        except Exception:
+            pass
+
     data = ItemDetailFullResponse(
         id=item.id,
         name=item.name,
