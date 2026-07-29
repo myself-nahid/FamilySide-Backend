@@ -709,53 +709,60 @@ async def resolve_share_token(token: str, api_request: Request, db: Session = De
 @router.post("/items/{item_id}/reviews", response_model=APIResponse[None])
 async def post_item_review(
     item_id: int,
-    category_name: str = Form(...),
-    recommendation_level: str = Form(...), 
-    comment: str = Form(...),
-    tags: Optional[str] = Form(None), # Make it optional to prevent crashes
+    recommendation_level: str = Form(...), # Still required
+    comment: str = Form(...),              # Still required
+    category_name: Optional[str] = Form(None), # <--- CHANGED: Now optional
+    tags: Optional[str] = Form(None), 
     photo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     import json
-    # 1. Check if the item actually exists
+    
+    # 1. Check if the item exists
     item = db.query(PlatformItem).filter(PlatformItem.id == item_id).first()
     if not item:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"Item with ID {item_id} not found. You cannot review a non-existent item."
-        )
-    
-    # 1. Handle File Upload
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # 2. Handle File Upload
     saved_path = None
-    if photo:
+    if photo and photo.filename:
         os.makedirs("uploads/reviews", exist_ok=True)
         saved_path = f"uploads/reviews/{datetime.utcnow().timestamp()}_{photo.filename}"
         with open(saved_path, "wb") as buffer:
             shutil.copyfileobj(photo.file, buffer)
 
-    # 2. ROBUST TAG PARSING (Fixes the 500 Error)
+    # 3. Robust Tag Parsing
     parsed_tags = []
     if tags:
         try:
-            # Attempt 1: Try parsing as a JSON array (e.g. ["Tag1", "Tag2"])
             parsed_tags = json.loads(tags)
-            if not isinstance(parsed_tags, list):
-                parsed_tags = [str(parsed_tags)]
-        except json.JSONDecodeError:
-            # Attempt 2: Fallback to comma-separated string (e.g. "Tag1, Tag2")
+        except:
             parsed_tags = [t.strip() for t in tags.split(",") if t.strip()]
 
-    # 3. Save to Database
+    # 4. Save to Database
     new_review = Review(
         user_id=current_user.id,
         item_id=item_id,
-        category_name=category_name,
+        category_name=category_name, # Will save as NULL if not provided
         recommendation_level=recommendation_level,
         comment=comment,
-        tags=parsed_tags, # Save the cleaned list
+        tags=parsed_tags,
         image_url=f"/{saved_path}" if saved_path else None
     )
+    
+    # 5. Notify Provider (logic we added previously)
+    if item.creator_id:
+        review_notif = Notification(
+            user_id=item.creator_id,
+            title="New Review Received! ⭐",
+            subtitle=f"{current_user.full_name} left a review on '{item.name}'.",
+            item_type=item.item_type,
+            item_id=item.id,
+            is_read=False
+        )
+        db.add(review_notif)
+
     db.add(new_review)
     db.commit()
     

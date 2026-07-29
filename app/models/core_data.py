@@ -116,7 +116,7 @@ class Review(Base):
     # Matching "Write Review" UI (Image 1)
     recommendation_level = Column(String) # Highly Recommended, Recommended, Average, Not suitable
     comment = Column(Text)
-    category_name = Column(String) # Selected category for this review
+    category_name = Column(String, nullable=True)
     tags = Column(JSON) # e.g. ["Education", "Music"]
     
     image_url = Column(String, nullable=True) # Review photo
