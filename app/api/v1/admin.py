@@ -6,7 +6,7 @@ from sqlalchemy import func
 from app.api.deps import get_db, get_current_admin
 from app.core.utils import get_full_url
 from app.models.user import User, Child
-from app.models.core_data import PlatformItem, Category, SupportMessage
+from app.models.core_data import LegalDocument, PlatformItem, Category, SupportMessage
 from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_
@@ -16,7 +16,7 @@ import os
 import shutil
 import json
 from app.schemas.admin_schema import (
-    DashboardOverviewResponse, TrendMetric, StatusDistribution,
+    DashboardOverviewResponse, LegalDocumentResponse, TrendMetric, StatusDistribution,
     FlaggedItemListItem, PendingApprovalListItem, UpcomingEventListItem,
     ChartDataResponse, ChartDataPoint
 )
@@ -31,6 +31,8 @@ from app.core.security import get_password_hash, verify_password
 from typing import List
 import googlemaps
 from app.core.config import settings
+from app.models.core_data import LegalDocument
+from app.schemas.admin_schema import LegalDocumentRequest, LegalDocumentResponse
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 
@@ -2186,3 +2188,27 @@ async def resolve_ticket(ticket_id: int, db: Session = Depends(get_db), admin: U
     ticket.status = "resolved"
     db.commit()
     return {"message": "Ticket marked as resolved"}
+
+@router.get("/legal/{doc_type}", response_model=APIResponse[LegalDocumentResponse])
+async def get_legal_document_admin(doc_type: str, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Allows admin to see the current text of a policy"""
+    doc = db.query(LegalDocument).filter(LegalDocument.document_type == doc_type).first()
+    if not doc:
+        # Return empty if not created yet
+        return APIResponse(status="success", message="Document not found", data={"document_type": doc_type, "content": ""})
+    
+    return APIResponse(status="success", message="Document fetched", data=doc)
+
+@router.put("/legal/{doc_type}", response_model=APIResponse[None])
+async def update_legal_document(doc_type: str, payload: LegalDocumentRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Allows admin to Create or Update the Privacy Policy"""
+    doc = db.query(LegalDocument).filter(LegalDocument.document_type == doc_type).first()
+    
+    if doc:
+        doc.content = payload.content
+    else:
+        new_doc = LegalDocument(document_type=doc_type, content=payload.content)
+        db.add(new_doc)
+    
+    db.commit()
+    return APIResponse(status="success", message=f"{doc_type.replace('_', ' ').capitalize()} updated successfully")

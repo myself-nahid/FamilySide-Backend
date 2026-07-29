@@ -277,3 +277,11 @@ class AdminProfileResponse(BaseModel):
     image_url: Optional[str] = None
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
+
+class LegalDocumentRequest(BaseModel):
+    content: str
+
+class LegalDocumentResponse(BaseModel):
+    document_type: str
+    content: str
+    updated_at: datetime

@@ -6,7 +6,7 @@ from datetime import datetime
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
-from app.models.core_data import Notification, PlatformItem, Category, SavedItem, SubCategory, SupportMessage
+from app.models.core_data import LegalDocument, Notification, PlatformItem, Category, SavedItem, SubCategory, SupportMessage
 from app.schemas.auth_schema import APIResponse
 from app.schemas.family_schema import CategoryGridItem, FullProfileResponse, GiftFilterParams, HomeHeaderResponse, HomeItemCard, HomeFeedResponse, CategoryTab, ItemDetailFullResponse, MapPinResponse, MapItemResponse, NotificationGroup, NotificationItem, NotificationListResponse, ReviewResponse, SavedItemsResponse, SearchFilterParams, SearchTabInitResponse, SubCategoryListResponse, UserProfileMetrics, UserReviewItem
 from app.models.core_data import UserGiftList, SavedItem
@@ -1755,7 +1755,20 @@ async def get_my_suggestions(api_request: Request, db: Session = Depends(get_db)
     
     return APIResponse(status="success", message="Suggestions fetched", data={"items": data})
 
-@router.get("/legal/privacy-policy")
-async def get_privacy_policy():
-    """Returns static text"""
-    return {"status": "success", "content": "FamilySide takes your privacy seriously..."}
+# @router.get("/legal/privacy-policy")
+# async def get_privacy_policy():
+#     """Returns static text"""
+#     return {"status": "success", "content": "FamilySide takes your privacy seriously..."}
+
+@router.get("/legal/privacy-policy", response_model=APIResponse[dict])
+async def get_dynamic_privacy_policy(db: Session = Depends(get_db)):
+    """Returns the latest Privacy Policy content to the mobile app"""
+    doc = db.query(LegalDocument).filter(LegalDocument.document_type == "privacy_policy").first()
+    
+    content = doc.content if doc else "Privacy Policy is being updated. Please check back soon."
+    
+    return APIResponse(
+        status="success", 
+        message="Privacy Policy loaded", 
+        data={"content": content}
+    )

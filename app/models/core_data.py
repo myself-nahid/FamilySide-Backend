@@ -167,3 +167,12 @@ class AnalyticsLog(Base):
     created_at = Column(DateTime, default=func.now())
 
     provider = relationship("User")
+
+class LegalDocument(Base):
+    """Stores dynamic text for Privacy Policy, Terms, etc."""
+    __tablename__ = "legal_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    document_type = Column(String, unique=True, index=True) # e.g., 'privacy_policy'
+    content = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
