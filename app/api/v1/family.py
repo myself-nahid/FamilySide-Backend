@@ -639,7 +639,8 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
                 date=r.created_at.strftime("%d %B %Y")
             ) for r in reviews
         ],
-        average_rating_label="Recommended"
+        average_rating_label="Recommended",
+        is_saved=False
     )
     return APIResponse(status="success", message="Details loaded", data=data)
 
