@@ -1781,15 +1781,16 @@ async def get_categories(page: int = 1, limit: int = 20, search: Optional[str] =
     
     total = query.count()
     categories = query.order_by(Category.id.desc()).offset((page - 1) * limit).limit(limit).all()
-    
-    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url) if c.image_url else None) for c in categories]
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
     return APIResponse(status="success", message="Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
 # get category without paginations
 @router.get("/categories/all", response_model=APIResponse[List[TaxonomyResponseItem]])
 async def get_all_categories(api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     categories = db.query(Category).all()
-    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url) if c.image_url else None) for c in categories]
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
     return APIResponse(status="success", message="Categories fetched", data=items)
 
 @router.post("/categories", response_model=APIResponse[None])
@@ -1804,6 +1805,7 @@ async def create_category(request: Request, db: Session = Depends(get_db), admin
     if db.query(Category).filter(Category.name.ilike(name)).first():
         raise HTTPException(status_code=400, detail="Category already exists")
     
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
     image_url = None
     if image:
         # Save image
@@ -1813,6 +1815,8 @@ async def create_category(request: Request, db: Session = Depends(get_db), admin
         with open(image_path, "wb") as f:
             f.write(await image.read())
         image_url = image_path.replace("\\", "/")
+    else:
+        image_url = DEFAULT_CATEGORY_IMAGE
     
     db.add(Category(name=name, image_url=image_url))
     db.commit()
@@ -1858,7 +1862,8 @@ async def toggle_category_status(cat_id: int, db: Session = Depends(get_db), adm
 @router.get("/categories/search", response_model=APIResponse[List[TaxonomyResponseItem]])
 async def search_categories(search: str, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     categories = db.query(Category).filter(Category.name.ilike(f"%{search}%")).all()
-    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url) if c.image_url else None) for c in categories]
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
     return APIResponse(status="success", message="Categories search results", data=items)
 
 # delete category (soft delete by blocking and deactivating all related sub-categories)
@@ -1886,15 +1891,16 @@ async def get_sub_categories(page: int = 1, limit: int = 20, search: Optional[st
     
     total = query.count()
     sub_cats = query.order_by(SubCategory.id.desc()).offset((page - 1) * limit).limit(limit).all()
-    
-    items = [TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url) if s.image_url else None, category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats]
+    DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_subcategory.png"
+    items = [TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url if s.image_url else DEFAULT_SUBCATEGORY_IMAGE), category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats]
     return APIResponse(status="success", message="Sub-Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
 # get sub-categories based on category_id without paginations
 @router.get("/sub-categories/{category_id}", response_model=APIResponse[List[TaxonomyResponseItem]])
 async def get_sub_categories_by_category(category_id: int, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     sub_cats = db.query(SubCategory).filter(SubCategory.category_id == category_id).all()
-    return APIResponse(status="success", message="Sub-Categories fetched", data=[TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url) if s.image_url else None, category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats])
+    DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_subcategory.png"
+    return APIResponse(status="success", message="Sub-Categories fetched", data=[TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url if s.image_url else DEFAULT_SUBCATEGORY_IMAGE), category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats])
 
 @router.post("/sub-categories", response_model=APIResponse[None])
 async def create_sub_category(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
@@ -1918,6 +1924,8 @@ async def create_sub_category(request: Request, db: Session = Depends(get_db), a
         with open(image_path, "wb") as f:
             f.write(await image.read())
         image_url = image_path.replace("\\", "/")
+    else:
+        image_url = "uploads/defaults/default_subcategory.png"
     
     db.add(SubCategory(name=name, category_id=int(category_id), image_url=image_url))
     db.commit()

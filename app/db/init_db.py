@@ -8,7 +8,7 @@ CATEGORY_SEED_DATA = [
     {
         "category": "SCHOOLS",
         "subcategories": [
-            "Show All",
+            # "Show All",
             "Nurseries",
             "Kindergartens",
             "Primary Schools"
@@ -37,7 +37,7 @@ CATEGORY_SEED_DATA = [
     {
         "category": "HEALTH",
         "subcategories": [
-            "Show All",
+            # "Show All",
             "Pediatricians",
             "Pregnancy & Motherhood",
             "Child Development & Learning",
@@ -72,7 +72,7 @@ CATEGORY_SEED_DATA = [
     },
     {
         "category": "COURSES, ACTIVITIES & EXPERIENCES",
-        "subcategories": ["Show All"],
+        "subcategories": ["sub-course", "sub-activity", "sub-experience"],
         "tags": [
             "0-3 Years",
             "3-6 Years",
@@ -99,7 +99,7 @@ CATEGORY_SEED_DATA = [
     },
     {
         "category": "SPORTS",
-        "subcategories": ["Show All"],
+        "subcategories": ["sub-sport"],
         "tags": [
             "0-3 Years",
             "3-6 Years",
@@ -119,7 +119,7 @@ CATEGORY_SEED_DATA = [
     {
         "category": "PARTIES",
         "subcategories": [
-            "Show All",
+            # "Show All",
             "Entertainment, Face Painting & Decorations",
             "Cake Designers & Catering",
             "Venues & Locations",
@@ -137,7 +137,7 @@ CATEGORY_SEED_DATA = [
     },
     {
         "category": "FAMILY FRIENDLY LOCALS",
-        "subcategories": ["Show All"],
+        "subcategories": ["sub-local"],
         "tags": [
             "Changing Table",
             "High Chairs",
@@ -151,7 +151,7 @@ CATEGORY_SEED_DATA = [
     },
     {
         "category": "PLAYGROUNDS",
-        "subcategories": ["Show All"],
+        "subcategories": ["sub-playground"],
         "tags": [
             "Outdoor",
             "Indoor",
@@ -170,7 +170,7 @@ CATEGORY_SEED_DATA = [
     },
     {
         "category": "OUTDOOR",
-        "subcategories": ["Show All"],
+        "subcategories": ["sub-outdoor"],
         "tags": [
             "Walks",
             "Hiking",
@@ -194,7 +194,7 @@ CATEGORY_SEED_DATA = [
     {
         "category": "SHOPPING",
         "subcategories": [
-            "Show All",
+            # "Show All",
             "Clothing",
             "Toys & Books",
             "Equipment",
@@ -221,7 +221,7 @@ CATEGORY_SEED_DATA = [
     {
         "category": "FOR MOM",
         "subcategories": [
-            "Show All",
+            # "Show All",
             "Fitness, Yoga & Pilates",
             "Wellness",
             "Maternity Photography",
@@ -273,7 +273,7 @@ CATEGORY_SEED_DATA = [
     {
         "category": "GIFTS",
         "subcategories": [
-            "Show All",
+            # "Show All",
             "Experiences",
             "Products",
             "Special Occasions",
@@ -311,11 +311,13 @@ CATEGORY_SEED_DATA = [
 def seed_taxonomy_data():
     db = SessionLocal()
     try:
+        DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+        DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_subcategory.png"
         for entry in CATEGORY_SEED_DATA:
             category_name = entry["category"].strip()
             category = db.query(Category).filter(func.lower(Category.name) == category_name.lower()).first()
             if not category:
-                category = Category(name=category_name)
+                category = Category(name=category_name, image_url=DEFAULT_CATEGORY_IMAGE)
                 db.add(category)
                 db.flush()
 
@@ -328,7 +330,7 @@ def seed_taxonomy_data():
                     func.lower(SubCategory.name) == normalized.lower()
                 ).first()
                 if not exists:
-                    db.add(SubCategory(name=normalized, category_id=category.id))
+                    db.add(SubCategory(name=normalized, category_id=category.id, image_url=DEFAULT_SUBCATEGORY_IMAGE))
 
             for tag_name in entry.get("tags", []):
                 normalized = tag_name.strip()
