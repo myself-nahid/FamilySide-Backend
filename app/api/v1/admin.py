@@ -1781,7 +1781,7 @@ async def get_categories(page: int = 1, limit: int = 20, search: Optional[str] =
     
     total = query.count()
     categories = query.order_by(Category.id.desc()).offset((page - 1) * limit).limit(limit).all()
-    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/"
     items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
     return APIResponse(status="success", message="Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
@@ -1789,7 +1789,7 @@ async def get_categories(page: int = 1, limit: int = 20, search: Optional[str] =
 @router.get("/categories/all", response_model=APIResponse[List[TaxonomyResponseItem]])
 async def get_all_categories(api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     categories = db.query(Category).all()
-    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
     items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
     return APIResponse(status="success", message="Categories fetched", data=items)
 
@@ -1805,7 +1805,7 @@ async def create_category(request: Request, db: Session = Depends(get_db), admin
     if db.query(Category).filter(Category.name.ilike(name)).first():
         raise HTTPException(status_code=400, detail="Category already exists")
     
-    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
     image_url = None
     if image:
         # Save image
@@ -1862,7 +1862,7 @@ async def toggle_category_status(cat_id: int, db: Session = Depends(get_db), adm
 @router.get("/categories/search", response_model=APIResponse[List[TaxonomyResponseItem]])
 async def search_categories(search: str, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     categories = db.query(Category).filter(Category.name.ilike(f"%{search}%")).all()
-    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
     items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
     return APIResponse(status="success", message="Categories search results", data=items)
 

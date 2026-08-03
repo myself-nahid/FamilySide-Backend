@@ -311,7 +311,7 @@ CATEGORY_SEED_DATA = [
 def seed_taxonomy_data():
     db = SessionLocal()
     try:
-        DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_category.png"
+        DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
         DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_subcategory.png"
         for entry in CATEGORY_SEED_DATA:
             category_name = entry["category"].strip()
