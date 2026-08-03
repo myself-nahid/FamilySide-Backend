@@ -312,7 +312,7 @@ def seed_taxonomy_data():
     db = SessionLocal()
     try:
         DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
-        DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_subcategory.png"
+        DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_activity.png"
         for entry in CATEGORY_SEED_DATA:
             category_name = entry["category"].strip()
             category = db.query(Category).filter(func.lower(Category.name) == category_name.lower()).first()

@@ -1781,7 +1781,7 @@ async def get_categories(page: int = 1, limit: int = 20, search: Optional[str] =
     
     total = query.count()
     categories = query.order_by(Category.id.desc()).offset((page - 1) * limit).limit(limit).all()
-    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/"
+    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
     items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
     return APIResponse(status="success", message="Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
@@ -1891,7 +1891,7 @@ async def get_sub_categories(page: int = 1, limit: int = 20, search: Optional[st
     
     total = query.count()
     sub_cats = query.order_by(SubCategory.id.desc()).offset((page - 1) * limit).limit(limit).all()
-    DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_subcategory.png"
+    DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_activity.png"
     items = [TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url if s.image_url else DEFAULT_SUBCATEGORY_IMAGE), category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats]
     return APIResponse(status="success", message="Sub-Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
@@ -1899,7 +1899,7 @@ async def get_sub_categories(page: int = 1, limit: int = 20, search: Optional[st
 @router.get("/sub-categories/{category_id}", response_model=APIResponse[List[TaxonomyResponseItem]])
 async def get_sub_categories_by_category(category_id: int, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     sub_cats = db.query(SubCategory).filter(SubCategory.category_id == category_id).all()
-    DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_subcategory.png"
+    DEFAULT_SUBCATEGORY_IMAGE = "uploads/defaults/default_activity.png"
     return APIResponse(status="success", message="Sub-Categories fetched", data=[TaxonomyResponseItem(id=s.id, name=s.name, is_active=s.is_active, image_url=get_full_url(api_request, s.image_url if s.image_url else DEFAULT_SUBCATEGORY_IMAGE), category_id=s.category_id, category_name=s.category.name if s.category else "") for s in sub_cats])
 
 @router.post("/sub-categories", response_model=APIResponse[None])
@@ -1925,7 +1925,7 @@ async def create_sub_category(request: Request, db: Session = Depends(get_db), a
             f.write(await image.read())
         image_url = image_path.replace("\\", "/")
     else:
-        image_url = "uploads/defaults/default_subcategory.png"
+        image_url = "uploads/defaults/default_activity.png"
     
     db.add(SubCategory(name=name, category_id=int(category_id), image_url=image_url))
     db.commit()
