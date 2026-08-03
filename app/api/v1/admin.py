@@ -56,6 +56,26 @@ def calculate_trend(db: Session, query_base, date_field) -> TrendMetric:
         is_increase=percentage_change >= 0
     )
 
+
+# Helper to resolve a user-friendly creator label
+def resolve_creator_label(user) -> str:
+    """
+    Return one of: 'Admin', 'Provider', 'Family', or a best-effort label
+    based on the User record attached to an item.
+    """
+    if not user:
+        return "Admin"
+    if getattr(user, "is_admin", False):
+        return "Admin"
+    user_type = getattr(user, "user_type", None)
+    if user_type:
+        if user_type.lower() == "provider":
+            return "Provider"
+        if user_type.lower() == "family":
+            return "Family"
+        return user_type.capitalize()
+    return "User"
+
 """
 1. DASHBOARD OVERVIEW (Top Cards + Trends + Donut Chart + Bottom Lists)
 """
@@ -737,7 +757,10 @@ async def get_activities_paginated(
         
     # Join with User table to filter by creator type if needed
     if creator_type and creator_type != "all":
-        query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
+        if creator_type.lower() == "admin":
+            query = query.join(User, PlatformItem.creator_id == User.id).filter(User.is_admin == True)
+        else:
+            query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
 
     total_count = query.count()
     offset = (page - 1) * limit
@@ -745,9 +768,7 @@ async def get_activities_paginated(
     
     activity_list = []
     for activity in activities:
-        creator_label = "Admin"
-        if activity.creator:
-            creator_label = activity.creator.user_type.capitalize() if activity.creator.user_type else "User"
+        creator_label = resolve_creator_label(activity.creator)
             
         activity_list.append(ActivityListItem(
             id=activity.id,
@@ -779,9 +800,7 @@ async def get_all_activities(
     
     activity_list = []
     for activity in activities:
-        creator_label = "Admin"
-        if activity.creator:
-            creator_label = activity.creator.user_type.capitalize() if activity.creator.user_type else "User"
+        creator_label = resolve_creator_label(activity.creator)
             
         activity_list.append(ActivityListItem(
             id=activity.id,
@@ -811,9 +830,7 @@ async def get_activity_detail(
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
         
-    creator_label = "Admin"
-    if activity.creator:
-        creator_label = activity.creator.user_type.capitalize() if activity.creator.user_type else "User"
+    creator_label = resolve_creator_label(activity.creator)
 
     # Mock tags for MVP display purposes
     mock_tags = ["Education", "Indoor", "Paid"]
@@ -1280,7 +1297,10 @@ async def get_events_paginated(
         query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
         
     if creator_type and creator_type != "all":
-        query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
+        if creator_type.lower() == "admin":
+            query = query.join(User, PlatformItem.creator_id == User.id).filter(User.is_admin == True)
+        else:
+            query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
 
     total_count = query.count()
     offset = (page - 1) * limit
@@ -1288,9 +1308,7 @@ async def get_events_paginated(
     
     event_list = []
     for event in events:
-        creator_label = "Admin"
-        if event.creator:
-            creator_label = event.creator.user_type.capitalize() if event.creator.user_type else "User"
+        creator_label = resolve_creator_label(event.creator)
             
         event_list.append(EventListItem(
             id=event.id,
@@ -1322,9 +1340,7 @@ async def get_all_events(
     
     event_list = []
     for event in events:
-        creator_label = "Admin"
-        if event.creator:
-            creator_label = event.creator.user_type.capitalize() if event.creator.user_type else "User"
+        creator_label = resolve_creator_label(event.creator)
             
         event_list.append(EventListItem(
             id=event.id,
@@ -1354,9 +1370,7 @@ async def get_event_detail(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
         
-    creator_label = "Admin"
-    if event.creator:
-        creator_label = event.creator.user_type.capitalize() if event.creator.user_type else "User"
+    creator_label = resolve_creator_label(event.creator)
 
     # Combine start and end time into one readable string
     time_str = "N/A"
@@ -1550,7 +1564,10 @@ async def get_gifts_paginated(
         query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
         
     if creator_type and creator_type != "all":
-        query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
+        if creator_type.lower() == "admin":
+            query = query.join(User, PlatformItem.creator_id == User.id).filter(User.is_admin == True)
+        else:
+            query = query.join(User, PlatformItem.creator_id == User.id).filter(User.user_type == creator_type.lower())
 
     total_count = query.count()
     offset = (page - 1) * limit
@@ -1558,9 +1575,7 @@ async def get_gifts_paginated(
     
     gift_list = []
     for gift in gifts:
-        creator_label = "Admin"
-        if gift.creator:
-            creator_label = gift.creator.user_type.capitalize() if gift.creator.user_type else "User"
+        creator_label = resolve_creator_label(gift.creator)
             
         gift_list.append(GiftListItem(
             id=gift.id,
@@ -1592,9 +1607,7 @@ async def get_all_gifts(
     
     gift_list = []
     for gift in gifts:
-        creator_label = "Admin"
-        if gift.creator:
-            creator_label = gift.creator.user_type.capitalize() if gift.creator.user_type else "User"
+        creator_label = resolve_creator_label(gift.creator)
             
         gift_list.append(GiftListItem(
             id=gift.id,
@@ -1625,9 +1638,7 @@ async def get_gift_detail(
     if not gift:
         raise HTTPException(status_code=404, detail="Gift not found")
         
-    creator_label = "Admin"
-    if gift.creator:
-        creator_label = gift.creator.user_type.capitalize() if gift.creator.user_type else "User"
+    creator_label = resolve_creator_label(gift.creator)
 
     # Combine start and end time into one string if time exists
     time_str = "N/A"
