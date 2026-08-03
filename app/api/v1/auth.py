@@ -322,6 +322,15 @@ async def social_auth(payload: SocialLoginRequest, db: Session = Depends(get_db)
 
     user = db.query(User).filter(User.email == user_data["email"]).first()
 
+    if user and user.user_type != payload.user_type.value:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This email is already registered as a different user type. "
+                "Please log in with the correct account type or use a different email."
+            )
+        )
+
     if not user:
         user = User(
             full_name=user_data["name"], email=user_data["email"],
