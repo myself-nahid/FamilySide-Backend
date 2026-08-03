@@ -204,25 +204,57 @@ async def login(payload: LoginRequest, background_tasks: BackgroundTasks, db: Se
 
 """Google and Apple Social Login Helpers"""
 # Mock implementations for development.
+def _get_google_client_ids() -> list[str]:
+    ids = []
+    if settings.GOOGLE_CLIENT_ID:
+        ids.append(settings.GOOGLE_CLIENT_ID)
+    if settings.GOOGLE_CLIENT_IDS:
+        ids.extend([client.strip() for client in settings.GOOGLE_CLIENT_IDS.split(",") if client.strip()])
+    return ids
+
 async def verify_google_token(token: str):
     # DEVELOPMENT MOCK: If send 'test_google_token', it bypasses Google Servers
     if token == "test_google_token":
         return {"email": "social_test@gmail.com", "name": "Mishuk Social", "provider_id": "google_123"}
-        
-    try:
-        idinfo = id_token.verify_oauth2_token(
-            token, 
-            google_requests.Request(), 
-            settings.GOOGLE_CLIENT_ID
+
+    client_ids = _get_google_client_ids()
+    request = google_requests.Request()
+    last_error = None
+
+    if not client_ids:
+        try:
+            idinfo = id_token.verify_oauth2_token(token, request)
+            return {
+                "email": idinfo['email'],
+                "name": idinfo.get('name', idinfo['email'].split('@')[0]),
+                "provider_id": idinfo['sub']
+            }
+        except Exception as e:
+            print(f"Google Auth Error (no audience check): {e}")
+            raise HTTPException(status_code=401, detail="Invalid Google token")
+
+    for client_id in client_ids:
+        try:
+            idinfo = id_token.verify_oauth2_token(token, request, client_id)
+            return {
+                "email": idinfo['email'],
+                "name": idinfo.get('name', idinfo['email'].split('@')[0]),
+                "provider_id": idinfo['sub']
+            }
+        except Exception as e:
+            last_error = e
+            # Continue trying other allowed client IDs if there are multiple
+            continue
+
+    print(f"Google Auth Error for all client IDs: {last_error}")
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            "Invalid Google token. "
+            "Ensure the id_token is generated for one of the configured GOOGLE_CLIENT_ID(s). "
+            "If you use multiple Google OAuth clients, set GOOGLE_CLIENT_IDS with a comma-separated list."
         )
-        return {
-            "email": idinfo['email'],
-            "name": idinfo.get('name', idinfo['email'].split('@')[0]),
-            "provider_id": idinfo['sub']
-        }
-    except Exception as e:
-        print(f"Google Auth Error: {e}")
-        raise HTTPException(status_code=401, detail="Invalid Google token")
+    )
 
 async def verify_apple_token(token: str):
     # DEVELOPMENT MOCK: If you send 'test_apple_token'
