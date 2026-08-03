@@ -15,6 +15,8 @@ from io import BytesIO
 import os
 import shutil
 import json
+import base64
+from openai import AsyncOpenAI
 from app.schemas.admin_schema import (
     DashboardOverviewResponse, LegalDocumentResponse, TrendMetric, StatusDistribution,
     FlaggedItemListItem, PendingApprovalListItem, UpcomingEventListItem,
@@ -22,7 +24,7 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse, AIFlyerExtractionResponse
 )
 from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem, LegalDocumentRequest
 from app.core.security import get_password_hash, verify_password
@@ -31,6 +33,8 @@ import googlemaps
 from app.core.config import settings
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
+
+openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Helper function to calculate Trend Metrics (This Week vs Last Week)
 def calculate_trend(db: Session, query_base, date_field) -> TrendMetric:
@@ -54,6 +58,81 @@ def calculate_trend(db: Session, query_base, date_field) -> TrendMetric:
         count=total_count,
         percentage_change=abs(percentage_change),
         is_increase=percentage_change >= 0
+    )
+
+
+def _build_ai_flyer_prompt(item_type: str) -> str:
+    return f"""
+    You are an AI assistant for a family and kids app. Your job is to extract data from this image/flyer.
+    Read ALL the text on the image. Even if the data is messy, try your best to extract it.
+    This flyer represents a {item_type}.
+    Return ONLY a raw JSON object with the exact keys below.
+    
+    - "name": The title of the {item_type}. (If no title is obvious, use the largest text).
+    - "description": A summary of what this is, or just extract the main body text you see.
+    - "date": Event date in DD/MM/YYYY format. If no date is found, return null.
+    - "start_time": Start time in HH:MM AM/PM format. If no time is found, return null.
+    - "location": The address, venue name, or city mentioned. If none, return null.
+    - "price": The numeric cost. If it says 'Free', return 0.0. Remove currency symbols like $. If no price is mentioned, return null.
+    - "suggested_tags": Array of 2 to 4 relevant tags (e.g., ["Music", "Indoor", "Toddler", "Education", "Sports"]).
+    
+    If you cannot find an exact match for a field, try to infer it from the context before returning null.
+    """
+
+
+async def _parse_flyer_image(flyer_image: UploadFile, item_type: str) -> AIFlyerExtractionResponse:
+    if not settings.OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OpenAI API key not configured.")
+
+    image_bytes = flyer_image.file.read() if hasattr(flyer_image.file, 'read') else flyer_image.read()
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    mime_type = flyer_image.content_type or "image/jpeg"
+
+    if mime_type not in ["image/jpeg", "image/png", "image/webp", "image/gif"]:
+        ext = flyer_image.filename.split(".")[-1].lower() if flyer_image.filename else "jpg"
+        if ext == "png":
+            mime_type = "image/png"
+        elif ext == "webp":
+            mime_type = "image/webp"
+        elif ext == "gif":
+            mime_type = "image/gif"
+        else:
+            mime_type = "image/jpeg"
+
+    prompt = _build_ai_flyer_prompt(item_type)
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o",
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+            ]}
+        ],
+        max_tokens=500,
+        temperature=0.2
+    )
+
+    ai_raw_text = response.choices[0].message.content.strip()
+    if ai_raw_text.startswith("```"):
+        lines = ai_raw_text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        ai_raw_text = "\n".join(lines).strip()
+
+    extracted_data = json.loads(ai_raw_text)
+
+    return AIFlyerExtractionResponse(
+        name=extracted_data.get("name"),
+        description=extracted_data.get("description"),
+        date=extracted_data.get("date"),
+        start_time=extracted_data.get("start_time"),
+        location=extracted_data.get("location"),
+        price=float(extracted_data.get("price") or 0.0),
+        suggested_tags=extracted_data.get("suggested_tags", [])
     )
 
 
@@ -786,6 +865,16 @@ async def get_activities_paginated(
         data={"total": total_count, "page": page, "limit": limit, "items": activity_list}
     )
 
+# 4.0 ADMIN AI FLYER PARSING FOR ACTIVITIES
+@router.post("/ai/parse-flyer/activity", response_model=APIResponse[AIFlyerExtractionResponse])
+async def admin_ai_parse_activity_flyer(
+    flyer_image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    data = _parse_flyer_image(flyer_image, "activity")
+    return APIResponse(status="success", message="Activity flyer parsed successfully", data=data)
+
 # get all activities without pagination
 @router.get("/activities/all", response_model=APIResponse[List[ActivityListItem]])
 async def get_all_activities(
@@ -1326,6 +1415,16 @@ async def get_events_paginated(
         data={"total": total_count, "page": page, "limit": limit, "items": event_list}
     )
 
+# 5.0 ADMIN AI FLYER PARSING FOR EVENTS
+@router.post("/ai/parse-flyer/event", response_model=APIResponse[AIFlyerExtractionResponse])
+async def admin_ai_parse_event_flyer(
+    flyer_image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    data = _parse_flyer_image(flyer_image, "event")
+    return APIResponse(status="success", message="Event flyer parsed successfully", data=data)
+
 # get all events without pagination
 @router.get("/events/all", response_model=APIResponse[List[EventListItem]])
 async def get_all_events(
@@ -1592,6 +1691,16 @@ async def get_gifts_paginated(
         message="Gifts fetched", 
         data={"total": total_count, "page": page, "limit": limit, "items": gift_list}
     )
+
+# 6.0 ADMIN AI FLYER PARSING FOR GIFTS
+@router.post("/ai/parse-flyer/gift", response_model=APIResponse[AIFlyerExtractionResponse])
+async def admin_ai_parse_gift_flyer(
+    flyer_image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    data = _parse_flyer_image(flyer_image, "gift")
+    return APIResponse(status="success", message="Gift flyer parsed successfully", data=data)
 
 # get all gifts without pagination
 @router.get("/gifts/all", response_model=APIResponse[List[GiftListItem]])

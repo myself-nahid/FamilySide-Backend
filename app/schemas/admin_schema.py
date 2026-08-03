@@ -272,6 +272,15 @@ class AdminProfileUpdateRequest(BaseModel):
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
 
+class AIFlyerExtractionResponse(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    date: Optional[str] = None        # Format: DD/MM/YYYY
+    start_time: Optional[str] = None  # Format: HH:MM AM/PM
+    location: Optional[str] = None
+    price: Optional[float] = 0.0
+    suggested_tags: List[str] = []
+
 class AdminProfileResponse(BaseModel):
     name: str
     image_url: Optional[str] = None
