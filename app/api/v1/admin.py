@@ -872,7 +872,7 @@ async def admin_ai_parse_activity_flyer(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    data = _parse_flyer_image(flyer_image, "activity")
+    data = await _parse_flyer_image(flyer_image, "activity")
     return APIResponse(status="success", message="Activity flyer parsed successfully", data=data)
 
 # get all activities without pagination
@@ -1422,7 +1422,7 @@ async def admin_ai_parse_event_flyer(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    data = _parse_flyer_image(flyer_image, "event")
+    data = await _parse_flyer_image(flyer_image, "event")
     return APIResponse(status="success", message="Event flyer parsed successfully", data=data)
 
 # get all events without pagination
@@ -1699,7 +1699,7 @@ async def admin_ai_parse_gift_flyer(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    data = _parse_flyer_image(flyer_image, "gift")
+    data = await _parse_flyer_image(flyer_image, "gift")
     return APIResponse(status="success", message="Gift flyer parsed successfully", data=data)
 
 # get all gifts without pagination
