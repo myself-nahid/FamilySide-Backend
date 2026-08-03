@@ -6,10 +6,10 @@ from sqlalchemy import func
 from app.api.deps import get_db, get_current_admin
 from app.core.utils import get_full_url
 from app.models.user import User, Child
-from app.models.core_data import LegalDocument, PlatformItem, Category, SupportMessage
+from app.models.core_data import LegalDocument, PlatformItem, Category, SupportMessage, Tag, SubCategory, Notification
 from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
 from datetime import datetime, timedelta
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 import pandas as pd
 from io import BytesIO
 import os
@@ -22,17 +22,13 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, UserDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse
 )
-from app.models.core_data import Category, SubCategory, Tag
-from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem
-from app.models.core_data import Notification
+from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem, LegalDocumentRequest
 from app.core.security import get_password_hash, verify_password
 from typing import List
 import googlemaps
 from app.core.config import settings
-from app.models.core_data import LegalDocument
-from app.schemas.admin_schema import LegalDocumentRequest, LegalDocumentResponse
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 
@@ -1986,33 +1982,63 @@ async def delete_sub_category(sub_id: int, db: Session = Depends(get_db), admin:
 
 # 7.3 TAG MANAGEMENT
 @router.get("/tags", response_model=APIResponse[dict])
-async def get_tags(page: int = 1, limit: int = 20, search: Optional[str] = None, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+async def get_tags(page: int = 1, limit: int = 20, search: Optional[str] = None, category_id: Optional[int] = None, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     query = db.query(Tag)
     if search: query = query.filter(Tag.name.ilike(f"%{search}%"))
+    if category_id is not None:
+        query = query.filter(Tag.category_id == category_id)
     
     total = query.count()
     tags = query.order_by(Tag.id.desc()).offset((page - 1) * limit).limit(limit).all()
     
-    items = [TaxonomyResponseItem(id=t.id, name=t.name, is_active=t.is_active, image_url=get_full_url(api_request, t.image_url) if t.image_url else None) for t in tags]
+    items = [TaxonomyResponseItem(
+        id=t.id,
+        name=t.name,
+        is_active=t.is_active,
+        image_url=get_full_url(api_request, t.image_url) if t.image_url else None,
+        category_id=t.category_id,
+        category_name=t.category.name if t.category else None
+    ) for t in tags]
     return APIResponse(status="success", message="Tags fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
 # get tags without paginations
 @router.get("/tags/all", response_model=APIResponse[List[TaxonomyResponseItem]])
-async def get_all_tags(api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    tags = db.query(Tag).all()
-    return APIResponse(status="success", message="Tags fetched", data=[TaxonomyResponseItem(id=t.id, name=t.name, is_active=t.is_active, image_url=get_full_url(api_request, t.image_url) if t.image_url else None) for t in tags])
+async def get_all_tags(category_id: Optional[int] = None, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    query = db.query(Tag)
+    if category_id is not None:
+        query = query.filter(Tag.category_id == category_id)
+    tags = query.order_by(Tag.id.desc()).all()
+    return APIResponse(status="success", message="Tags fetched", data=[TaxonomyResponseItem(
+        id=t.id,
+        name=t.name,
+        is_active=t.is_active,
+        image_url=get_full_url(api_request, t.image_url) if t.image_url else None,
+        category_id=t.category_id,
+        category_name=t.category.name if t.category else None
+    ) for t in tags])
 
 @router.post("/tags", response_model=APIResponse[None])
 async def create_tag(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     form = await request.form()
     name = form.get("name")
+    category_id = form.get("category_id")
     image = form.get("image")
     
     if not name:
         raise HTTPException(status_code=400, detail="Tag name is required")
     
-    if db.query(Tag).filter(Tag.name.ilike(name)).first():
-        raise HTTPException(status_code=400, detail="Tag already exists")
+    if category_id:
+        if not db.query(Category).filter(Category.id == int(category_id)).first():
+            raise HTTPException(status_code=404, detail="Parent Category not found")
+    
+    existing_query = db.query(Tag).filter(Tag.name.ilike(name))
+    if category_id is not None:
+        existing_query = existing_query.filter(Tag.category_id == int(category_id))
+    else:
+        existing_query = existing_query.filter(Tag.category_id == None)
+    
+    if existing_query.first():
+        raise HTTPException(status_code=400, detail="Tag already exists for this category")
     
     image_url = None
     if image:
@@ -2024,7 +2050,7 @@ async def create_tag(request: Request, db: Session = Depends(get_db), admin: Use
             f.write(await image.read())
         image_url = image_path.replace("\\", "/")
     
-    db.add(Tag(name=name, image_url=image_url))
+    db.add(Tag(name=name, category_id=int(category_id) if category_id else None, image_url=image_url))
     db.commit()
     return APIResponse(status="success", message="Tag created successfully")
 
@@ -2036,15 +2062,24 @@ async def edit_tag(tag_id: int, request: Request, db: Session = Depends(get_db),
 
     form = await request.form()
     name = form.get("name")
+    category_id = form.get("category_id")
     image = form.get("image")
 
     if not name:
         raise HTTPException(status_code=400, detail="Tag name is required")
 
-    existing = db.query(Tag).filter(Tag.name.ilike(name), Tag.id != tag_id).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Tag name is already in use")
+    if category_id:
+        if not db.query(Category).filter(Category.id == int(category_id)).first():
+            raise HTTPException(status_code=404, detail="Parent Category not found")
 
+    existing_query = db.query(Tag).filter(Tag.name.ilike(name), Tag.id != tag_id)
+    if category_id is not None:
+        existing_query = existing_query.filter(Tag.category_id == int(category_id))
+    else:
+        existing_query = existing_query.filter(Tag.category_id == None)
+    if existing_query.first():
+        raise HTTPException(status_code=400, detail="Tag already exists for this category")
+    
     if image:
         upload_dir = "uploads/tags"
         os.makedirs(upload_dir, exist_ok=True)
@@ -2054,22 +2089,25 @@ async def edit_tag(tag_id: int, request: Request, db: Session = Depends(get_db),
         tag.image_url = image_path.replace("\\", "/")
 
     tag.name = name
+    tag.category_id = int(category_id) if category_id else None
     db.commit()
     return APIResponse(status="success", message="Tag updated")
 
-@router.patch("/tags/{tag_id}/toggle", response_model=APIResponse[None])
-async def toggle_tag_status(tag_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    tag = db.query(Tag).filter(Tag.id == tag_id).first()
-    if not tag: raise HTTPException(status_code=404, detail="Tag not found")
-    tag.is_active = not tag.is_active
-    db.commit()
-    return APIResponse(status="success", message=f"Tag {'activated' if tag.is_active else 'blocked'}")
-
 # search tags
 @router.get("/tags/search", response_model=APIResponse[List[TaxonomyResponseItem]])
-async def search_tags(search: str, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    tags = db.query(Tag).filter(Tag.name.ilike(f"%{search}%")).all()
-    items = [TaxonomyResponseItem(id=t.id, name=t.name, is_active=t.is_active, image_url=get_full_url(api_request, t.image_url) if t.image_url else None) for t in tags]
+async def search_tags(search: str, category_id: Optional[int] = None, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    query = db.query(Tag).filter(Tag.name.ilike(f"%{search}%"))
+    if category_id is not None:
+        query = query.filter(Tag.category_id == category_id)
+    tags = query.all()
+    items = [TaxonomyResponseItem(
+        id=t.id,
+        name=t.name,
+        is_active=t.is_active,
+        image_url=get_full_url(api_request, t.image_url) if t.image_url else None,
+        category_id=t.category_id,
+        category_name=t.category.name if t.category else None
+    ) for t in tags]
     return APIResponse(status="success", message="Tags search results", data=items)
 
 

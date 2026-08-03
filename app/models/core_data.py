@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text, JSON
+from sqlalchemy import Column, DateTime, Integer, String, Boolean, Date, Time, ForeignKey, Float, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -27,10 +27,15 @@ class SubCategory(Base):
 
 class Tag(Base):
     __tablename__ = "tags"
+    __table_args__ = (UniqueConstraint('name', 'category_id', name='uq_tag_name_category'),)
+
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
     image_url = Column(String, nullable=True)
+    category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), nullable=True)
     is_active = Column(Boolean, default=True)
+
+    category = relationship("Category", backref="tags")
 
 
 # PLATFORM ITEMS (Activities, Events, Gifts)
