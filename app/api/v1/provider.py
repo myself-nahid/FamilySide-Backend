@@ -27,6 +27,23 @@ import googlemaps
 openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 def _build_ai_flyer_prompt(item_type: str) -> str:
+    if item_type == "activity":
+        return f"""
+    You are an AI assistant for a family and kids app. Your job is to extract data from this image/flyer.
+    Read ALL the text on the image. Even if the data is messy, try your best to extract it.
+    This flyer represents an {item_type}.
+    Return ONLY a raw JSON object with the exact keys below.
+    
+    - "name": The title of the {item_type}. (If no title is obvious, use the largest text).
+    - "description": A summary of what this is, or just extract the main body text you see.
+    - "opening_days": The day(s) the activity is available, e.g. "Mon-Fri" or "Weekends". If none, return null.
+    - "opening_hours": The hours when the activity is open, e.g. "10:00 AM to 08:00 PM". If none, return null.
+    - "location": The address, venue name, or city mentioned. If none, return null.
+    - "price": The numeric cost. If it says 'Free', return 0.0. Remove currency symbols like $. If no price is mentioned, return null.
+    - "suggested_tags": Array of 2 to 4 relevant tags (e.g., ["Music", "Indoor", "Toddler", "Education", "Sports"]).
+    
+    If you cannot find an exact match for a field, try to infer it from the context before returning null.
+    """
     return f"""
     You are an AI assistant for a family and kids app. Your job is to extract data from this image/flyer.
     Read ALL the text on the image. Even if the data is messy, try your best to extract it.
@@ -109,6 +126,8 @@ async def _ai_parse_flyer_image(flyer_image: UploadFile, item_type: str) -> AIFl
         description=extracted_data.get("description"),
         date=extracted_data.get("date"),
         start_time=extracted_data.get("start_time"),
+        opening_days=extracted_data.get("opening_days"),
+        opening_hours=extracted_data.get("opening_hours"),
         location=extracted_data.get("location"),
         price=float(extracted_data.get("price") or 0.0),
         suggested_tags=extracted_data.get("suggested_tags", [])

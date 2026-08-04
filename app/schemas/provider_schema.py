@@ -99,6 +99,8 @@ class AIFlyerExtractionResponse(BaseModel):
     description: Optional[str] = None
     date: Optional[str] = None        # Format: DD/MM/YYYY
     start_time: Optional[str] = None  # Format: HH:MM AM/PM
+    opening_days: Optional[str] = None
+    opening_hours: Optional[str] = None
     location: Optional[str] = None
     price: Optional[float] = 0.0
     suggested_tags: List[str] = []
