@@ -79,6 +79,21 @@ def _build_ai_flyer_prompt(item_type: str) -> str:
     
     If you cannot find an exact match for a field, try to infer it from the context before returning null.
     """
+    if item_type == "gift":
+        return f"""
+    You are an AI assistant for a family and kids app. Your job is to extract data from this image/flyer.
+    Read ALL the text on the image. Even if the data is messy, try your best to extract it.
+    This flyer represents a gift.
+    Return ONLY a raw JSON object with the exact keys below.
+    
+    - "name": The title of the gift. (If no title is obvious, use the largest text).
+    - "description": A summary of the gift or the offer details.
+    - "price": The numeric amount or value. If it says 'Free', return 0.0. Remove currency symbols like $. If no amount is mentioned, return null.
+    - "suggested_tags": Array of 2 to 4 relevant tags (e.g., ["Toddler", "Indoor", "Free", "Paid"]).
+    
+    Do not include a "location" field in the response.
+    If you cannot find an exact match for a field, try to infer it from the context before returning null.
+    """
     return f"""
     You are an AI assistant for a family and kids app. Your job is to extract data from this image/flyer.
     Read ALL the text on the image. Even if the data is messy, try your best to extract it.
