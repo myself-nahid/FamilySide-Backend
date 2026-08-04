@@ -16,7 +16,7 @@ from fastapi import Form, File, UploadFile
 from app.core.config import settings
 from datetime import datetime, date
 from typing import List, Optional
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AuthenticationError
 import base64
 import random
 import shutil
@@ -66,24 +66,32 @@ async def _ai_parse_flyer_image(flyer_image: UploadFile, item_type: str) -> AIFl
 
     prompt = _build_ai_flyer_prompt(item_type)
 
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o",
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}
-                    }
-                ]
-            }
-        ],
-        max_tokens=500,
-        temperature=0.2
-    )
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o",
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}
+                        }
+                    ]
+                }
+            ],
+            max_tokens=500,
+            temperature=0.2
+        )
+    except Exception as exc:
+        message = str(exc)
+        if AuthenticationError is not None and isinstance(exc, AuthenticationError):
+            raise HTTPException(status_code=401, detail="Invalid OpenAI API key configured.")
+        if "invalid_api_key" in message or "Incorrect API key" in message:
+            raise HTTPException(status_code=401, detail="Invalid OpenAI API key configured.")
+        raise HTTPException(status_code=500, detail="Failed to call OpenAI API.")
 
     ai_raw_text = response.choices[0].message.content.strip()
     if ai_raw_text.startswith("```"):
