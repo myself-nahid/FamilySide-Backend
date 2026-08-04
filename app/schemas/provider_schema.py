@@ -104,3 +104,9 @@ class AIFlyerExtractionResponse(BaseModel):
     location: Optional[str] = None
     price: Optional[float] = 0.0
     suggested_tags: List[str] = []
+
+class GiftAIFlyerExtractionResponse(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = 0.0
+    suggested_tags: List[str] = []
