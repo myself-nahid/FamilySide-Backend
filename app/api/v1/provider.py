@@ -8,7 +8,7 @@ from app.models.core_data import AnalyticsLog, Category, PlatformItem, Notificat
 from app.schemas.auth_schema import APIResponse
 from app.schemas.provider_schema import AnalyticsDataPoint, ContributorStats, ManagedEventItem, ProviderAnalyticsResponse, ProviderDropdownItem, ProviderEventsResponse, ProviderHomeHeader, ProviderItemCard, ProviderHomeResponse, ProviderItemDetailResponse, ProviderProfileResponse
 from app.core.utils import calculate_distance_km, get_full_url
-from app.schemas.provider_schema import AIFlyerExtractionResponse
+from app.schemas.provider_schema import AIFlyerExtractionResponse, GiftAIFlyerExtractionResponse
 from app.models.core_data import Notification
 from app.schemas.family_schema import NotificationListResponse, NotificationGroup, NotificationItem
 from datetime import timedelta
@@ -695,14 +695,15 @@ async def ai_parse_activity_flyer(
     return APIResponse(status="success", message="Activity flyer parsed successfully", data=data)
 
 
-@router.post("/ai/parse-flyer/gift", response_model=APIResponse[AIFlyerExtractionResponse])
+@router.post("/ai/parse-flyer/gift", response_model=APIResponse[GiftAIFlyerExtractionResponse])
 async def ai_parse_gift_flyer(
     flyer_image: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     data = await _ai_parse_flyer_image(flyer_image, "gift")
-    return APIResponse(status="success", message="Gift flyer parsed successfully", data=data)
+    gift_data = GiftAIFlyerExtractionResponse(**data.dict())
+    return APIResponse(status="success", message="Gift flyer parsed successfully", data=gift_data)
 
 # 3. CREATE GIFT
 @router.post("/create/gift", response_model=APIResponse[None])

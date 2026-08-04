@@ -24,7 +24,7 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse, AIFlyerExtractionResponse
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse, AIFlyerExtractionResponse, GiftAIFlyerExtractionResponse
 )
 from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem, LegalDocumentRequest
 from app.core.security import get_password_hash, verify_password
@@ -1735,14 +1735,15 @@ async def get_gifts_paginated(
     )
 
 # 6.0 ADMIN AI FLYER PARSING FOR GIFTS
-@router.post("/ai/parse-flyer/gift", response_model=APIResponse[AIFlyerExtractionResponse])
+@router.post("/ai/parse-flyer/gift", response_model=APIResponse[GiftAIFlyerExtractionResponse])
 async def admin_ai_parse_gift_flyer(
     flyer_image: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     data = await _parse_flyer_image(flyer_image, "gift")
-    return APIResponse(status="success", message="Gift flyer parsed successfully", data=data)
+    gift_data = GiftAIFlyerExtractionResponse(**data.dict())
+    return APIResponse(status="success", message="Gift flyer parsed successfully", data=gift_data)
 
 # get all gifts without pagination
 @router.get("/gifts/all", response_model=APIResponse[List[GiftListItem]])
