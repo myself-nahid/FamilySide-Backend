@@ -1792,3 +1792,16 @@ async def get_dynamic_privacy_policy(db: Session = Depends(get_db)):
         message="Privacy Policy loaded", 
         data={"content": content}
     )
+
+@router.get("/legal/terms-and-conditions", response_model=APIResponse[dict])
+async def get_dynamic_terms_and_conditions(db: Session = Depends(get_db)):
+    """Returns the latest Terms and Conditions content to the mobile app"""
+    doc = db.query(LegalDocument).filter(LegalDocument.document_type == "terms_and_conditions").first()
+    
+    content = doc.content if doc else "Terms and Conditions are being updated. Please check back soon."
+    
+    return APIResponse(
+        status="success", 
+        message="Terms and Conditions loaded", 
+        data={"content": content}
+    )

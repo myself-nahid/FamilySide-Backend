@@ -2430,9 +2430,37 @@ async def get_legal_document_admin(doc_type: str, db: Session = Depends(get_db),
     doc = db.query(LegalDocument).filter(LegalDocument.document_type == doc_type).first()
     if not doc:
         # Return empty if not created yet
-        return APIResponse(status="success", message="Document not found", data={"document_type": doc_type, "content": ""})
+        return APIResponse(
+            status="success",
+            message="Document not found",
+            data={"document_type": doc_type, "content": "", "updated_at": None}
+        )
     
     return APIResponse(status="success", message="Document fetched", data=doc)
+
+@router.get("/legal/privacy-policy", response_model=APIResponse[LegalDocumentResponse])
+async def get_privacy_policy_admin(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Fetches the Privacy Policy content for admin management"""
+    doc = db.query(LegalDocument).filter(LegalDocument.document_type == "privacy_policy").first()
+    if not doc:
+        return APIResponse(
+            status="success",
+            message="Document not found",
+            data={"document_type": "privacy_policy", "content": "", "updated_at": None}
+        )
+    return APIResponse(status="success", message="Privacy Policy fetched", data=doc)
+
+@router.get("/legal/terms-and-conditions", response_model=APIResponse[LegalDocumentResponse])
+async def get_terms_and_conditions_admin(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Fetches the Terms and Conditions content for admin management"""
+    doc = db.query(LegalDocument).filter(LegalDocument.document_type == "terms_and_conditions").first()
+    if not doc:
+        return APIResponse(
+            status="success",
+            message="Document not found",
+            data={"document_type": "terms_and_conditions", "content": "", "updated_at": None}
+        )
+    return APIResponse(status="success", message="Terms and Conditions fetched", data=doc)
 
 @router.put("/legal/{doc_type}", response_model=APIResponse[None])
 async def update_legal_document(doc_type: str, payload: LegalDocumentRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
@@ -2447,3 +2475,25 @@ async def update_legal_document(doc_type: str, payload: LegalDocumentRequest, db
     
     db.commit()
     return APIResponse(status="success", message=f"{doc_type.replace('_', ' ').capitalize()} updated successfully")
+
+@router.put("/legal/privacy-policy", response_model=APIResponse[None])
+async def update_privacy_policy_admin(payload: LegalDocumentRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Creates or updates the Privacy Policy."""
+    doc = db.query(LegalDocument).filter(LegalDocument.document_type == "privacy_policy").first()
+    if doc:
+        doc.content = payload.content
+    else:
+        db.add(LegalDocument(document_type="privacy_policy", content=payload.content))
+    db.commit()
+    return APIResponse(status="success", message="Privacy Policy updated successfully")
+
+@router.put("/legal/terms-and-conditions", response_model=APIResponse[None])
+async def update_terms_and_conditions_admin(payload: LegalDocumentRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Creates or updates the Terms and Conditions."""
+    doc = db.query(LegalDocument).filter(LegalDocument.document_type == "terms_and_conditions").first()
+    if doc:
+        doc.content = payload.content
+    else:
+        db.add(LegalDocument(document_type="terms_and_conditions", content=payload.content))
+    db.commit()
+    return APIResponse(status="success", message="Terms and Conditions updated successfully")

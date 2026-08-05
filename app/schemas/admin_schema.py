@@ -301,4 +301,7 @@ class LegalDocumentRequest(BaseModel):
 class LegalDocumentResponse(BaseModel):
     document_type: str
     content: str
-    updated_at: datetime.datetime
+    updated_at: Optional[datetime.datetime] = None
+
+    class Config:
+        orm_mode = True
