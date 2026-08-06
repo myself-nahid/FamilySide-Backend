@@ -141,8 +141,11 @@ class ItemReviewDetailResponse(BaseModel):
     name: str
     creator_email: Optional[str] = "abc@gmail.com"
     category: str
+    category_id: Optional[int] = None
     sub_categories: Optional[List[str]] = []
+    sub_category_ids: Optional[List[int]] = []
     tags: List[str] = []
+    tag_ids: List[int] = []
     
     # Specific fields
     price: float
@@ -182,12 +185,14 @@ class ActivityDetailResponse(BaseModel):
     email: Optional[str] = None
     instagram: Optional[str] = None
     category: str
+    category_id: Optional[int] = None
     sub_categories: Optional[List[str]] = []
+    sub_category_ids: Optional[List[int]] = []
     tags: List[str] = []
+    tag_ids: List[int] = []
     price: float
     opening_days: Optional[str] = None
     opening_hours: Optional[str] = None
-    tags: List[str] = []
 
 class CreateActivityRequest(BaseModel):
     name: str
@@ -222,12 +227,16 @@ class EventDetailResponse(BaseModel):
     status: str
     date_added: str
     whatsapp: Optional[str] = None
+    category: str
+    category_id: Optional[int] = None
+    sub_categories: Optional[List[str]] = []
+    sub_category_ids: Optional[List[int]] = []
+    tags: List[str] = []
+    tag_ids: List[int] = []
     
     # Event Specifics
     date: Optional[str] = None
     time: Optional[str] = None
-    
-    tags: List[str] = []
 
 class GiftListItem(BaseModel):
     id: int
@@ -249,11 +258,16 @@ class GiftDetailResponse(BaseModel):
     status: str
     date_added: str
     whatsapp: Optional[str] = None
+    category: str
+    category_id: Optional[int] = None
+    sub_categories: Optional[List[str]] = []
+    sub_category_ids: Optional[List[int]] = []
+    tags: List[str] = []
+    tag_ids: List[int] = []
     
     # Gift Specifics
     date: Optional[str] = None
     time: Optional[str] = None
-    tags: List[str] = []
     
     # Mock 'Includes' array for the UI design in Image 3
     includes: List[str] = []

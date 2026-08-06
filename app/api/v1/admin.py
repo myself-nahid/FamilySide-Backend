@@ -966,6 +966,9 @@ async def get_activity_detail(
     # Mock tags for MVP display purposes
     # mock_tags = ["Education", "Indoor", "Paid"]
 
+    parsed_sub_categories = activity.sub_categories if isinstance(activity.sub_categories, list) else []
+    parsed_tags = activity.tags if isinstance(activity.tags, list) else []
+
     detail = ActivityDetailResponse(
         id=activity.id,
         name=activity.name,
@@ -980,8 +983,11 @@ async def get_activity_detail(
         email=activity.email,
         instagram=activity.instagram,
         category=activity.category.name if activity.category else "Uncategorized",
-        sub_categories=activity.sub_categories,
-        tags=activity.tags or ["Indoor", "Ongoing", "Free"],
+        category_id=activity.category_id,
+        sub_categories=parsed_sub_categories,
+        sub_category_ids=[s.get("id") for s in parsed_sub_categories if isinstance(s, dict) and s.get("id") is not None],
+        tags=parsed_tags or ["Indoor", "Ongoing", "Free"],
+        tag_ids=[t.get("id") for t in parsed_tags if isinstance(t, dict) and t.get("id") is not None],
         price=activity.price,
         opening_days=activity.opening_days,
         opening_hours=activity.opening_hours,
@@ -1620,8 +1626,8 @@ async def get_event_detail(
         if event.end_time:
             time_str += f" to {event.end_time.strftime('%I:%M %p')}"
 
-    # Safely parse JSON tags
-    tags = event.tags if isinstance(event.tags, list) else []
+    parsed_sub_categories = event.sub_categories if isinstance(event.sub_categories, list) else []
+    parsed_tags = event.tags if isinstance(event.tags, list) else []
 
     detail = EventDetailResponse(
         id=event.id,
@@ -1634,9 +1640,14 @@ async def get_event_detail(
         status=event.status.capitalize(),
         date_added=event.created_at.strftime("%d %b %Y") if event.created_at else "N/A",
         whatsapp=event.whatsapp,
+        category=event.category.name if event.category else "Uncategorized",
+        category_id=event.category_id,
+        sub_categories=parsed_sub_categories,
+        sub_category_ids=[s.get("id") for s in parsed_sub_categories if isinstance(s, dict) and s.get("id") is not None],
+        tags=parsed_tags,
+        tag_ids=[t.get("id") for t in parsed_tags if isinstance(t, dict) and t.get("id") is not None],
         date=event.date.strftime("%d %b %Y") if event.date else "N/A",
         time=time_str,
-        tags=tags
     )
     
     return APIResponse(status="success", message="Event details fetched", data=detail)
@@ -1996,7 +2007,8 @@ async def get_gift_detail(
     if gift.start_time:
         time_str = gift.start_time.strftime("%I:%M %p")
 
-    tags = gift.tags if isinstance(gift.tags, list) else []
+    parsed_sub_categories = gift.sub_categories if isinstance(gift.sub_categories, list) else []
+    parsed_tags = gift.tags if isinstance(gift.tags, list) else []
     
     # Mock data to support the specific "Includes" section in Image 3
     mock_includes = ["1 class", "Materials for the message", "Duration: 2 Hours"]
@@ -2012,9 +2024,14 @@ async def get_gift_detail(
         status=gift.status.capitalize(),
         date_added=gift.created_at.strftime("%d %b %Y") if gift.created_at else "N/A",
         whatsapp=gift.whatsapp,
+        category=gift.category.name if gift.category else "Uncategorized",
+        category_id=gift.category_id,
+        sub_categories=parsed_sub_categories,
+        sub_category_ids=[s.get("id") for s in parsed_sub_categories if isinstance(s, dict) and s.get("id") is not None],
+        tags=parsed_tags,
+        tag_ids=[t.get("id") for t in parsed_tags if isinstance(t, dict) and t.get("id") is not None],
         date=gift.date.strftime("%d %b %Y") if gift.date else "N/A",
         time=time_str,
-        tags=tags,
         includes=mock_includes
     )
     
