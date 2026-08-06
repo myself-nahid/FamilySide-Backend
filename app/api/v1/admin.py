@@ -981,11 +981,10 @@ async def get_activity_detail(
         instagram=activity.instagram,
         category=activity.category.name if activity.category else "Uncategorized",
         sub_categories=activity.sub_categories,
-        tags=activity.tags,
+        tags=activity.tags or ["Indoor", "Ongoing", "Free"],
         price=activity.price,
         opening_days=activity.opening_days,
         opening_hours=activity.opening_hours,
-        tags=activity.tags or ["Indoor", "Ongoing", "Free"]  # Default mock tags for UI display
     )
     
     return APIResponse(status="success", message="Activity details fetched", data=detail)
