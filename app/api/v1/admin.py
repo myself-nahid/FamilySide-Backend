@@ -977,6 +977,12 @@ async def get_activity_detail(
         status=activity.status.capitalize(),
         date_added=activity.created_at.strftime("%d %b %Y") if activity.created_at else "N/A",
         whatsapp=activity.whatsapp,
+        email=activity.email,
+        instagram=activity.instagram,
+        category=activity.category.name if activity.category else "Uncategorized",
+        sub_categories=activity.sub_categories,
+        tags=activity.tags,
+        price=activity.price,
         opening_days=activity.opening_days,
         opening_hours=activity.opening_hours,
         tags=mock_tags

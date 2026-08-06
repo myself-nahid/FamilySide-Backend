@@ -179,6 +179,12 @@ class ActivityDetailResponse(BaseModel):
     status: str
     date_added: str
     whatsapp: Optional[str] = None
+    email: Optional[str] = None
+    instagram: Optional[str] = None
+    category: str
+    sub_categories: Optional[List[str]] = []
+    tags: List[str] = []
+    price: float
     opening_days: Optional[str] = None
     opening_hours: Optional[str] = None
     tags: List[str] = []
