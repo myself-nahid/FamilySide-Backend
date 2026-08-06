@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db, get_current_admin
 from app.core.utils import get_full_url
-from app.models.user import User, Child
+from app.models.user import User, Child, Interest
 from app.models.core_data import LegalDocument, PlatformItem, Category, SupportMessage, Tag, SubCategory, Notification
 from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
 from datetime import datetime, timedelta
@@ -26,7 +26,7 @@ from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
     ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse, AIFlyerExtractionResponse, GiftAIFlyerExtractionResponse
 )
-from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem, LegalDocumentRequest
+from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem, LegalDocumentRequest, InterestRequest, InterestResponseItem
 from app.core.security import get_password_hash, verify_password
 from typing import List
 import googlemaps
@@ -2318,6 +2318,59 @@ async def delete_category(cat_id: int, db: Session = Depends(get_db), admin: Use
     
     db.commit()
     return APIResponse(status="success", message="Category and its sub-categories have been blocked successfully")
+
+
+# 7.2 INTEREST MANAGEMENT
+@router.get("/interests", response_model=APIResponse[dict])
+async def get_interests(page: int = 1, limit: int = 20, search: Optional[str] = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    query = db.query(Interest)
+    if search:
+        query = query.filter(Interest.name.ilike(f"%{search}%"))
+
+    total = query.count()
+    interests = query.order_by(Interest.id.desc()).offset((page - 1) * limit).limit(limit).all()
+    items = [InterestResponseItem(id=i.id, name=i.name) for i in interests]
+    return APIResponse(status="success", message="Interests fetched", data={"total": total, "page": page, "limit": limit, "items": items})
+
+@router.get("/interests/all", response_model=APIResponse[List[InterestResponseItem]])
+async def get_all_interests(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    interests = db.query(Interest).order_by(Interest.name.asc()).all()
+    items = [InterestResponseItem(id=i.id, name=i.name) for i in interests]
+    return APIResponse(status="success", message="Interests fetched", data=items)
+
+@router.post("/interests", response_model=APIResponse[None])
+async def create_interest(payload: InterestRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    if db.query(Interest).filter(func.lower(Interest.name) == payload.name.strip().lower()).first():
+        raise HTTPException(status_code=400, detail="Interest already exists")
+
+    interest = Interest(name=payload.name.strip())
+    db.add(interest)
+    db.commit()
+    return APIResponse(status="success", message="Interest created successfully")
+
+@router.put("/interests/{interest_id}", response_model=APIResponse[None])
+async def edit_interest(interest_id: int, payload: InterestRequest, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    interest = db.query(Interest).filter(Interest.id == interest_id).first()
+    if not interest:
+        raise HTTPException(status_code=404, detail="Interest not found")
+
+    existing = db.query(Interest).filter(func.lower(Interest.name) == payload.name.strip().lower(), Interest.id != interest_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Another interest with this name already exists")
+
+    interest.name = payload.name.strip()
+    db.commit()
+    return APIResponse(status="success", message="Interest updated successfully")
+
+@router.delete("/interests/{interest_id}", response_model=APIResponse[None])
+async def delete_interest(interest_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    interest = db.query(Interest).filter(Interest.id == interest_id).first()
+    if not interest:
+        raise HTTPException(status_code=404, detail="Interest not found")
+
+    db.delete(interest)
+    db.commit()
+    return APIResponse(status="success", message="Interest deleted successfully")
 
 
 # 7.2 SUB-CATEGORY MANAGEMENT

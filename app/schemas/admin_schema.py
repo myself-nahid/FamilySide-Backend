@@ -267,6 +267,13 @@ class TaxonomyResponseItem(BaseModel):
     category_id: Optional[int] = None # Used for Sub-categories only
     category_name: Optional[str] = None # Used for Sub-categories only
 
+class InterestRequest(BaseModel):
+    name: str
+
+class InterestResponseItem(BaseModel):
+    id: int
+    name: str
+
 class AdminProfileUpdateRequest(BaseModel):
     name: str
     email: Optional[EmailStr] = None
