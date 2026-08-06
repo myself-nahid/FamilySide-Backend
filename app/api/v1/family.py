@@ -506,31 +506,42 @@ async def search_and_filter_items(
 async def get_map_pins(
     api_request: Request,
     category_id: Optional[int] = None,
+    radius: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     categories = db.query(Category).filter(Category.is_active == True).all()
     category_list = [CategoryTab(id=c.id, name=c.name) for c in categories]
 
+    radius = radius or settings.MAP_INITIAL_RADIUS_KM
+    if radius <= 0:
+        raise HTTPException(status_code=400, detail="Radius must be greater than 0.")
+
     query = db.query(PlatformItem).filter(PlatformItem.status == "approved")
     if category_id:
         query = query.filter(PlatformItem.category_id == category_id)
-    items = query.all()
+    items = query.filter(PlatformItem.lat.isnot(None), PlatformItem.lng.isnot(None)).all()
 
     saved_item_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
+
+    filtered_items = []
+    for item in items:
+        dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+        if dist is not None and dist <= radius:
+            filtered_items.append((item, dist))
 
     pins = [
         MapPinResponse(
             id=i.id,
             item_type=i.item_type,
-            lat=i.lat or 0.0,
-            lng=i.lng or 0.0,
+            lat=i.lat,
+            lng=i.lng,
             category_icon=i.category.name if i.category else "General"
-        ) for i in items if i.lat is not None and i.lng is not None
+        ) for i, _ in filtered_items
     ]
 
     map_items = []
-    for item in items:
+    for item, dist in filtered_items:
         map_items.append(MapItemResponse(
             id=item.id,
             item_type=item.item_type,
@@ -538,10 +549,10 @@ async def get_map_pins(
             image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
             category_name=item.category.name if item.category else "General",
             price=item.price or 0.0,
-            lat=item.lat or 0.0,
-            lng=item.lng or 0.0,
+            lat=item.lat,
+            lng=item.lng,
             location=item.location or "N/A",
-            distance_km=calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng),
+            distance_km=dist,
             age_range="0-20 years",
             date_label=item.date.strftime("%d %B %Y") if item.date else None,
             is_recommended=True,
@@ -554,7 +565,8 @@ async def get_map_pins(
         data={
             "categories": category_list,
             "items": map_items,
-            "pins": pins
+            "pins": pins,
+            "search_radius_km": radius
         }
     )
 

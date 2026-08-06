@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "").strip()
     base_url: str = os.getenv("base_url")
     GOOGLE_MAPS_API_KEY: str = os.getenv("GOOGLE_MAPS_API_KEY", "")
+    MAP_INITIAL_RADIUS_KM: int = int(os.getenv("MAP_INITIAL_RADIUS_KM", 20))
+    MAP_RADIUS_STEP_KM: int = int(os.getenv("MAP_RADIUS_STEP_KM", 20))
+    MAP_MAX_RADIUS_KM: int = int(os.getenv("MAP_MAX_RADIUS_KM", 100))
 
     class Config:
         case_sensitive = True
