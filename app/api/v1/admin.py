@@ -964,7 +964,7 @@ async def get_activity_detail(
     creator_label = resolve_creator_label(activity.creator)
 
     # Mock tags for MVP display purposes
-    mock_tags = ["Education", "Indoor", "Paid"]
+    # mock_tags = ["Education", "Indoor", "Paid"]
 
     detail = ActivityDetailResponse(
         id=activity.id,
@@ -985,7 +985,7 @@ async def get_activity_detail(
         price=activity.price,
         opening_days=activity.opening_days,
         opening_hours=activity.opening_hours,
-        tags=mock_tags
+        tags=activity.tags or ["Indoor", "Ongoing", "Free"]  # Default mock tags for UI display
     )
     
     return APIResponse(status="success", message="Activity details fetched", data=detail)
