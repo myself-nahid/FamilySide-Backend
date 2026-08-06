@@ -1638,6 +1638,19 @@ async def update_basic_profile(
     # 3. Update Text Fields
     current_user.full_name = full_name
     current_user.location_name = location_name
+
+    # 4. Geocode the user's profile location if coordinates are missing
+    if location_name and settings.GOOGLE_MAPS_API_KEY:
+        try:
+            gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
+            res = gmaps.geocode(location_name)
+            if res:
+                loc = res[0].get("geometry", {}).get("location")
+                if loc and loc.get("lat") is not None and loc.get("lng") is not None:
+                    current_user.lat = loc.get("lat")
+                    current_user.lng = loc.get("lng")
+        except Exception:
+            pass
     
     db.commit()
     
