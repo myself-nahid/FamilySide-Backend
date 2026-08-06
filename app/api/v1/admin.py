@@ -1646,6 +1646,7 @@ async def get_event_detail(
         sub_category_ids=[s.get("id") for s in parsed_sub_categories if isinstance(s, dict) and s.get("id") is not None],
         tags=parsed_tags,
         tag_ids=[t.get("id") for t in parsed_tags if isinstance(t, dict) and t.get("id") is not None],
+        price=event.price,
         date=event.date.strftime("%d %b %Y") if event.date else "N/A",
         time=time_str,
     )

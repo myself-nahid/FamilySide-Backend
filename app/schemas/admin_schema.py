@@ -233,6 +233,7 @@ class EventDetailResponse(BaseModel):
     sub_category_ids: Optional[List[int]] = []
     tags: List[str] = []
     tag_ids: List[int] = []
+    price: float = 0.0
     
     # Event Specifics
     date: Optional[str] = None
