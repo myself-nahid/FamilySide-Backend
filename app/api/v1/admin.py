@@ -1107,6 +1107,101 @@ async def create_activity(
     
     return APIResponse(status="success", message="Activity created successfully with photo!")
 
+@router.put("/activities/{activity_id}", response_model=APIResponse[None])
+async def update_activity(
+    request: Request,
+    activity_id: int,
+    name: str = Form(...),
+    location: str = Form(...),
+    category_id: int = Form(...),
+    price: float = Form(0.0),
+    description: str = Form(...),
+    website: Optional[str] = Form(None),
+    whatsapp: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    instagram: Optional[str] = Form(None),
+    opening_days: Optional[str] = Form(None),
+    opening_hours: Optional[str] = Form(None),
+    sub_categories: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    activity = db.query(PlatformItem).filter(PlatformItem.id == activity_id, PlatformItem.item_type == "activity").first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    form = await request.form()
+    upload_file = form.get("photo") or form.get("image_url")
+    saved_image_path = activity.image_url
+    if upload_file is not None:
+        if hasattr(upload_file, "filename") and upload_file.filename:
+            UPLOAD_DIR = "uploads/activities"
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            file_extension = upload_file.filename.split(".")[-1]
+            file_name = f"activity_{datetime.utcnow().timestamp()}.{file_extension}"
+            file_path = os.path.join(UPLOAD_DIR, file_name)
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(upload_file.file, buffer)
+            saved_image_path = f"/{file_path}".replace("\\", "/")
+        else:
+            text_url = str(upload_file).strip()
+            saved_image_path = text_url or activity.image_url
+
+    parsed_sub_categories = []
+    parsed_tags = []
+    if sub_categories:
+        try:
+            parsed_sub_categories = json.loads(sub_categories)
+        except:
+            parsed_sub_categories = [sub_categories]
+    if tags:
+        try:
+            parsed_tags = json.loads(tags)
+        except:
+            parsed_tags = [tags]
+
+    gmaps = None
+    if settings.GOOGLE_MAPS_API_KEY:
+        try:
+            gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
+        except Exception:
+            gmaps = None
+
+    lat_val = activity.lat
+    lng_val = activity.lng
+    if location and gmaps:
+        try:
+            geocode_result = gmaps.geocode(location)
+            if geocode_result:
+                loc = geocode_result[0].get('geometry', {}).get('location')
+                if loc:
+                    lat_val = loc.get('lat')
+                    lng_val = loc.get('lng')
+        except Exception:
+            pass
+
+    activity.name = name
+    activity.location = location
+    activity.category_id = category_id
+    activity.price = price
+    activity.description = description
+    activity.website = website
+    activity.whatsapp = whatsapp
+    activity.email = email
+    activity.instagram = instagram
+    activity.opening_days = opening_days
+    activity.opening_hours = opening_hours
+    activity.sub_categories = parsed_sub_categories
+    activity.tags = parsed_tags
+    activity.image_url = saved_image_path
+    activity.lat = lat_val
+    activity.lng = lng_val
+
+    db.commit()
+    return APIResponse(status="success", message="Activity updated successfully!")
+
 # @router.post("/activities/bulk-upload", response_model=APIResponse[dict])
 # async def bulk_upload_activities(
 #     file: UploadFile = File(...),
@@ -1662,6 +1757,105 @@ async def create_event(
     
     return APIResponse(status="success", message="Event created successfully!")
 
+@router.put("/events/{event_id}", response_model=APIResponse[None])
+async def update_event(
+    event_id: int,
+    name: str = Form(...),
+    location: str = Form(...),
+    category_id: int = Form(...),
+    price: float = Form(0.0),
+    description: str = Form(...),
+    website: Optional[str] = Form(None),
+    whatsapp: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    instagram: Optional[str] = Form(None),
+    date: Optional[str] = Form(None),
+    start_time: Optional[str] = Form(None),
+    end_time: Optional[str] = Form(None),
+    sub_categories: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    event = db.query(PlatformItem).filter(PlatformItem.id == event_id, PlatformItem.item_type == "event").first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    saved_image_path = event.image_url
+    if photo and photo.filename:
+        UPLOAD_DIR = "uploads/events"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        file_extension = photo.filename.split(".")[-1]
+        file_name = f"event_{datetime.utcnow().timestamp()}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        saved_image_path = f"/{file_path}".replace("\\", "/")
+    elif image_url and image_url.strip():
+        saved_image_path = image_url.strip()
+
+    parsed_sub = []
+    parsed_tags = []
+    if sub_categories:
+        try:
+            parsed_sub = json.loads(sub_categories)
+        except:
+            parsed_sub = [sub_categories]
+    if tags:
+        try:
+            parsed_tags = json.loads(tags)
+        except:
+            parsed_tags = [tags]
+
+    parsed_date = None
+    parsed_start = None
+    parsed_end = None
+    if date:
+        try:
+            parsed_date = datetime.strptime(date, "%d/%m/%Y").date()
+        except:
+            try:
+                parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+            except:
+                parsed_date = None
+    if start_time:
+        try:
+            parsed_start = datetime.strptime(start_time, "%I:%M %p").time()
+        except:
+            try:
+                parsed_start = datetime.strptime(start_time, "%H:%M").time()
+            except:
+                parsed_start = None
+    if end_time:
+        try:
+            parsed_end = datetime.strptime(end_time, "%I:%M %p").time()
+        except:
+            try:
+                parsed_end = datetime.strptime(end_time, "%H:%M").time()
+            except:
+                parsed_end = None
+
+    event.name = name
+    event.location = location
+    event.category_id = category_id
+    event.price = price
+    event.description = description
+    event.website = website
+    event.whatsapp = whatsapp
+    event.email = email
+    event.instagram = instagram
+    event.date = parsed_date
+    event.start_time = parsed_start
+    event.end_time = parsed_end
+    event.sub_categories = parsed_sub
+    event.tags = parsed_tags
+    event.image_url = saved_image_path
+
+    db.commit()
+    return APIResponse(status="success", message="Event updated successfully!")
+
 # 5.4 DELETE EVENT
 @router.delete("/events/{event_id}", response_model=APIResponse[None])
 async def delete_event(event_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
@@ -1909,6 +2103,87 @@ async def create_gift(
         pass
     
     return APIResponse(status="success", message="Gift created successfully!")
+
+@router.put("/gifts/{gift_id}", response_model=APIResponse[None])
+async def update_gift(
+    request: Request,
+    gift_id: int,
+    name: str = Form(...),
+    location: str = Form(...),
+    category_id: int = Form(...),
+    price: float = Form(0.0),
+    description: str = Form(...),
+    website: Optional[str] = Form(None),
+    whatsapp: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    instagram: Optional[str] = Form(None),
+    date: Optional[str] = Form(None),
+    sub_categories: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    gift = db.query(PlatformItem).filter(PlatformItem.id == gift_id, PlatformItem.item_type == "gift").first()
+    if not gift:
+        raise HTTPException(status_code=404, detail="Gift not found")
+
+    form = await request.form()
+    upload_file = form.get("photo") or form.get("image_url")
+    saved_image_path = gift.image_url
+    if upload_file is not None:
+        if hasattr(upload_file, "filename") and upload_file.filename:
+            UPLOAD_DIR = "uploads/gifts"
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            file_extension = upload_file.filename.split(".")[-1]
+            file_name = f"gift_{datetime.utcnow().timestamp()}.{file_extension}"
+            file_path = os.path.join(UPLOAD_DIR, file_name)
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(upload_file.file, buffer)
+            saved_image_path = f"/{file_path}".replace("\\", "/")
+        else:
+            text_url = str(upload_file).strip()
+            saved_image_path = text_url or gift.image_url
+
+    parsed_sub = []
+    parsed_tags = []
+    if sub_categories:
+        try:
+            parsed_sub = json.loads(sub_categories)
+        except:
+            parsed_sub = [sub_categories]
+    if tags:
+        try:
+            parsed_tags = json.loads(tags)
+        except:
+            parsed_tags = [tags]
+
+    parsed_date = None
+    if date:
+        try:
+            parsed_date = datetime.strptime(date, "%d/%m/%Y").date()
+        except:
+            try:
+                parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+            except:
+                parsed_date = None
+
+    gift.name = name
+    gift.location = location
+    gift.category_id = category_id
+    gift.price = price
+    gift.description = description
+    gift.website = website
+    gift.whatsapp = whatsapp
+    gift.email = email
+    gift.instagram = instagram
+    gift.date = parsed_date
+    gift.sub_categories = parsed_sub
+    gift.tags = parsed_tags
+    gift.image_url = saved_image_path
+
+    db.commit()
+    return APIResponse(status="success", message="Gift updated successfully!")
 
 # 6.4 DELETE GIFT
 @router.delete("/gifts/{gift_id}", response_model=APIResponse[None])
