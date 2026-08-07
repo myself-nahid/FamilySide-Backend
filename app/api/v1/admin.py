@@ -2278,6 +2278,10 @@ async def create_category(request: Request, db: Session = Depends(get_db), admin
         image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{upload_file.filename}")
         with open(image_path, "wb") as f:
             f.write(await upload_file.read())
+        image_url = image_path.replace("\\", "/")
+
+    category = Category(name=name, image_url=image_url)
+    db.add(category)
     db.commit()
     return APIResponse(status="success", message="Category created successfully")
 
