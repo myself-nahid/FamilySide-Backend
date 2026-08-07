@@ -2260,27 +2260,24 @@ async def create_category(request: Request, db: Session = Depends(get_db), admin
     form = await request.form()
     name = form.get("name")
     image = form.get("image")
+    icon = form.get("icon")
+    upload_file = icon or image
     
     if not name:
         raise HTTPException(status_code=400, detail="Category name is required")
-    
+
     if db.query(Category).filter(Category.name.ilike(name)).first():
         raise HTTPException(status_code=400, detail="Category already exists")
     
     DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
     image_url = None
-    if image:
-        # Save image
+    if upload_file:
+        # Save image/icon
         upload_dir = "uploads/categories"
         os.makedirs(upload_dir, exist_ok=True)
-        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{image.filename}")
+        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{upload_file.filename}")
         with open(image_path, "wb") as f:
-            f.write(await image.read())
-        image_url = image_path.replace("\\", "/")
-    else:
-        image_url = DEFAULT_CATEGORY_IMAGE
-    
-    db.add(Category(name=name, image_url=image_url))
+            f.write(await upload_file.read())
     db.commit()
     return APIResponse(status="success", message="Category created successfully")
 
@@ -2293,6 +2290,8 @@ async def edit_category(cat_id: int, request: Request, db: Session = Depends(get
     form = await request.form()
     name = form.get("name")
     image = form.get("image")
+    icon = form.get("icon")
+    upload_file = icon or image
 
     if not name:
         raise HTTPException(status_code=400, detail="Category name is required")
@@ -2301,12 +2300,12 @@ async def edit_category(cat_id: int, request: Request, db: Session = Depends(get
     if existing:
         raise HTTPException(status_code=400, detail="Category name is already in use")
 
-    if image:
+    if upload_file:
         upload_dir = "uploads/categories"
         os.makedirs(upload_dir, exist_ok=True)
-        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{image.filename}")
+        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{upload_file.filename}")
         with open(image_path, "wb") as f:
-            f.write(await image.read())
+            f.write(await upload_file.read())
         cat.image_url = image_path.replace("\\", "/")
 
     cat.name = name
@@ -2423,6 +2422,8 @@ async def create_sub_category(request: Request, db: Session = Depends(get_db), a
     name = form.get("name")
     category_id = form.get("category_id")
     image = form.get("image")
+    icon = form.get("icon")
+    upload_file = icon or image
     
     if not name or not category_id:
         raise HTTPException(status_code=400, detail="Sub-category name and category_id are required")
@@ -2431,13 +2432,13 @@ async def create_sub_category(request: Request, db: Session = Depends(get_db), a
         raise HTTPException(status_code=404, detail="Parent Category not found")
     
     image_url = None
-    if image:
-        # Save image
+    if upload_file:
+        # Save image/icon
         upload_dir = "uploads/subcategories"
         os.makedirs(upload_dir, exist_ok=True)
-        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{image.filename}")
+        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{upload_file.filename}")
         with open(image_path, "wb") as f:
-            f.write(await image.read())
+            f.write(await upload_file.read())
         image_url = image_path.replace("\\", "/")
     else:
         image_url = "uploads/defaults/default_activity.png"
@@ -2456,6 +2457,8 @@ async def edit_sub_category(sub_id: int, request: Request, db: Session = Depends
     name = form.get("name")
     category_id = form.get("category_id")
     image = form.get("image")
+    icon = form.get("icon")
+    upload_file = icon or image
 
     if not name or not category_id:
         raise HTTPException(status_code=400, detail="Sub-category name and category_id are required")
@@ -2463,12 +2466,12 @@ async def edit_sub_category(sub_id: int, request: Request, db: Session = Depends
     if not db.query(Category).filter(Category.id == int(category_id)).first():
         raise HTTPException(status_code=404, detail="Parent Category not found")
 
-    if image:
+    if upload_file:
         upload_dir = "uploads/subcategories"
         os.makedirs(upload_dir, exist_ok=True)
-        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{image.filename}")
+        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{upload_file.filename}")
         with open(image_path, "wb") as f:
-            f.write(await image.read())
+            f.write(await upload_file.read())
         sub.image_url = image_path.replace("\\", "/")
 
     sub.name = name
