@@ -2032,6 +2032,7 @@ async def get_gift_detail(
         tags=parsed_tags,
         tag_ids=[t.get("id") for t in parsed_tags if isinstance(t, dict) and t.get("id") is not None],
         date=gift.date.strftime("%d %b %Y") if gift.date else "N/A",
+        price=gift.price or 0.0,
         time=time_str,
         includes=mock_includes
     )
