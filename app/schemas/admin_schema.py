@@ -286,6 +286,7 @@ class TaxonomyResponseItem(BaseModel):
     name: str
     is_active: bool
     image_url: Optional[str] = None
+    icon_url: Optional[str] = None
     category_id: Optional[int] = None # Used for Sub-categories only
     category_name: Optional[str] = None # Used for Sub-categories only
 

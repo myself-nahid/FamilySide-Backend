@@ -2244,7 +2244,13 @@ async def get_categories(page: int = 1, limit: int = 20, search: Optional[str] =
     total = query.count()
     categories = query.order_by(Category.id.desc()).offset((page - 1) * limit).limit(limit).all()
     DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
-    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
+    items = [TaxonomyResponseItem(
+        id=c.id,
+        name=c.name,
+        is_active=c.is_active,
+        image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE),
+        icon_url=get_full_url(api_request, c.icon_url) if c.icon_url else None
+    ) for c in categories]
     return APIResponse(status="success", message="Categories fetched", data={"total": total, "page": page, "limit": limit, "items": items})
 
 # get category without paginations
@@ -2252,7 +2258,13 @@ async def get_categories(page: int = 1, limit: int = 20, search: Optional[str] =
 async def get_all_categories(api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     categories = db.query(Category).all()
     DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
-    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
+    items = [TaxonomyResponseItem(
+        id=c.id,
+        name=c.name,
+        is_active=c.is_active,
+        image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE),
+        icon_url=get_full_url(api_request, c.icon_url) if c.icon_url else None
+    ) for c in categories]
     return APIResponse(status="success", message="Categories fetched", data=items)
 
 @router.post("/categories", response_model=APIResponse[None])
@@ -2261,26 +2273,32 @@ async def create_category(request: Request, db: Session = Depends(get_db), admin
     name = form.get("name")
     image = form.get("image")
     icon = form.get("icon")
-    upload_file = icon or image
-    
+
     if not name:
         raise HTTPException(status_code=400, detail="Category name is required")
 
     if db.query(Category).filter(Category.name.ilike(name)).first():
         raise HTTPException(status_code=400, detail="Category already exists")
     
-    DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
     image_url = None
-    if upload_file:
-        # Save image/icon
-        upload_dir = "uploads/categories"
-        os.makedirs(upload_dir, exist_ok=True)
-        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{upload_file.filename}")
+    icon_url = None
+
+    upload_dir = "uploads/categories"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    if image:
+        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{image.filename}")
         with open(image_path, "wb") as f:
-            f.write(await upload_file.read())
+            f.write(await image.read())
         image_url = image_path.replace("\\", "/")
 
-    category = Category(name=name, image_url=image_url)
+    if icon:
+        icon_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{icon.filename}")
+        with open(icon_path, "wb") as f:
+            f.write(await icon.read())
+        icon_url = icon_path.replace("\\", "/")
+
+    category = Category(name=name, image_url=image_url, icon_url=icon_url)
     db.add(category)
     db.commit()
     return APIResponse(status="success", message="Category created successfully")
@@ -2295,7 +2313,6 @@ async def edit_category(cat_id: int, request: Request, db: Session = Depends(get
     name = form.get("name")
     image = form.get("image")
     icon = form.get("icon")
-    upload_file = icon or image
 
     if not name:
         raise HTTPException(status_code=400, detail="Category name is required")
@@ -2304,13 +2321,20 @@ async def edit_category(cat_id: int, request: Request, db: Session = Depends(get
     if existing:
         raise HTTPException(status_code=400, detail="Category name is already in use")
 
-    if upload_file:
-        upload_dir = "uploads/categories"
-        os.makedirs(upload_dir, exist_ok=True)
-        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{upload_file.filename}")
+    upload_dir = "uploads/categories"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    if image:
+        image_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{image.filename}")
         with open(image_path, "wb") as f:
-            f.write(await upload_file.read())
+            f.write(await image.read())
         cat.image_url = image_path.replace("\\", "/")
+
+    if icon:
+        icon_path = os.path.join(upload_dir, f"{datetime.utcnow().timestamp()}_{icon.filename}")
+        with open(icon_path, "wb") as f:
+            f.write(await icon.read())
+        cat.icon_url = icon_path.replace("\\", "/")
 
     cat.name = name
     db.commit()
@@ -2328,7 +2352,13 @@ async def toggle_category_status(cat_id: int, db: Session = Depends(get_db), adm
 async def search_categories(search: str, api_request: Request = None, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     categories = db.query(Category).filter(Category.name.ilike(f"%{search}%")).all()
     DEFAULT_CATEGORY_IMAGE = "uploads/defaults/default_activity.png"
-    items = [TaxonomyResponseItem(id=c.id, name=c.name, is_active=c.is_active, image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE)) for c in categories]
+    items = [TaxonomyResponseItem(
+        id=c.id,
+        name=c.name,
+        is_active=c.is_active,
+        image_url=get_full_url(api_request, c.image_url if c.image_url else DEFAULT_CATEGORY_IMAGE),
+        icon_url=get_full_url(api_request, c.icon_url) if c.icon_url else None
+    ) for c in categories]
     return APIResponse(status="success", message="Categories search results", data=items)
 
 # delete category (soft delete by blocking and deactivating all related sub-categories)

@@ -999,6 +999,7 @@ async def init_search_tab(
             id=cat.id,
             name=cat.name,
             image_url=get_full_url(api_request, cat.image_url) if cat.image_url else None,
+            icon_url=get_full_url(api_request, cat.icon_url) if cat.icon_url else None,
             color_code=ui_colors[idx % len(ui_colors)]
         ))
 

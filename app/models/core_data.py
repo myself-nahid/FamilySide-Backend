@@ -10,6 +10,7 @@ class Category(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     image_url = Column(String, nullable=True)
+    icon_url = Column(String, nullable=True)
     is_active = Column(Boolean, default=True) 
     
     # Relationship to Sub-Categories

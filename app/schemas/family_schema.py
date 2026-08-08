@@ -117,7 +117,8 @@ class SaveItemRequest(BaseModel):
 class CategoryGridItem(BaseModel):
     id: int
     name: str
-    image_url: Optional[str] = None # For the icons in the grid
+    image_url: Optional[str] = None # Category image for the UI card
+    icon_url: Optional[str] = None # Category icon to display in the search grid
     color_code: Optional[str] = None # e.g., "#E0F7FA" for the background
 
 class SearchTabInitResponse(BaseModel):
