@@ -226,3 +226,32 @@ class UpdateChildrenProfileRequest(BaseModel):
     is_expecting: bool
     expected_due_date: Optional[date] = None # Send as YYYY-MM-DD from frontend
     children: List[ChildBase] = []
+
+# Gift card related schemas
+class OccasionItem(BaseModel):
+    id: int
+    key: str
+    label: str
+    image_url: Optional[str] = None
+
+class OccasionListResponse(BaseModel):
+    items: List[OccasionItem]
+
+class GiftCardDesignItem(BaseModel):
+    id: int
+    image_url: str
+    is_active: bool
+    created_at: Optional[str] = None
+
+class GiftCardDesignListResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    items: List[GiftCardDesignItem]
+
+class GiftCardDesignDetailResponse(BaseModel):
+    id: int
+    image_url: str
+    is_active: bool
+    creator_id: Optional[int] = None
+    created_at: Optional[str] = None

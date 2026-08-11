@@ -33,6 +33,73 @@ from app.services.email_service import send_support_alert_to_admin
 
 router = APIRouter(prefix="/family", tags=["Family App - Home"])
 
+
+# --- Gift Card: Occasions & Designs (Family-facing) ---
+@router.get("/occasions", response_model=APIResponse)
+async def get_occasions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Return a curated list of occasions (pill buttons) for the UI"""
+    # Return only occasions that the user has already added as Gift Lists (deduplicated)
+    lists = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
+
+    seen = {}
+    for l in lists:
+        occ = (l.occasion or l.name or "general").strip()
+        if not occ:
+            continue
+        key = occ.lower().replace(" ", "_")
+        if key in seen:
+            continue
+        seen[key] = {
+            "id": l.id,
+            "key": key,
+            "label": occ if occ else l.name,
+            "image_url": get_full_url(None, l.image_url) if getattr(l, 'image_url', None) else None
+        }
+
+    items = list(seen.values())
+    return APIResponse(status="success", message="Occasions fetched", data={"items": items})
+
+
+@router.get("/gift-card-designs", response_model=APIResponse)
+async def list_gift_card_designs(page: int = 1, limit: int = 20, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """List active gift card designs uploaded by admins"""
+    from app.models.core_data import GiftCardDesign
+
+    q = db.query(GiftCardDesign).filter(GiftCardDesign.is_active == True)
+    total = q.count()
+    designs = q.order_by(GiftCardDesign.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+
+    items = []
+    for d in designs:
+        items.append({
+            "id": d.id,
+            "image_url": get_full_url(None, d.image_url) if d.image_url else None,
+            "is_active": d.is_active,
+            "created_at": d.created_at.isoformat() if d.created_at else None
+        })
+
+    return APIResponse(status="success", message="Gift card designs fetched", data={"total": total, "page": page, "limit": limit, "items": items})
+
+
+@router.get("/gift-card-designs/{design_id}", response_model=APIResponse)
+async def get_gift_card_design(design_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Return a single gift card design detail"""
+    from app.models.core_data import GiftCardDesign
+
+    d = db.query(GiftCardDesign).filter(GiftCardDesign.id == design_id, GiftCardDesign.is_active == True).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Design not found")
+
+    data = {
+        "id": d.id,
+        "image_url": get_full_url(None, d.image_url) if d.image_url else None,
+        "is_active": d.is_active,
+        "creator_id": d.creator_id,
+        "created_at": d.created_at.isoformat() if d.created_at else None
+    }
+
+    return APIResponse(status="success", message="Gift card design fetched", data=data)
+
 @router.get("/home/header", response_model=APIResponse[HomeHeaderResponse])
 async def get_home_header(
     api_request: Request,         
