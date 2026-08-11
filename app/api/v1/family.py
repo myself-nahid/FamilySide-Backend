@@ -28,6 +28,8 @@ from jose import jwt, JWTError
 import os
 import shutil
 import googlemaps
+from urllib.parse import quote_plus
+import time
 
 from app.services.email_service import send_support_alert_to_admin
 
@@ -99,6 +101,84 @@ async def get_gift_card_design(design_id: int, db: Session = Depends(get_db), cu
     }
 
     return APIResponse(status="success", message="Gift card design fetched", data=data)
+
+
+# SHARE: Accept a preview_url (prepared by the app) and return a public tokenized link
+@router.post("/gift-cards/share", response_model=APIResponse)
+async def share_gift_card(
+    payload: dict,
+    api_request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Generate a short tokenized public link for a ready-made card preview.
+    Payload must include `preview_url`. Optional: `expire_hours` (int), `channels` (list).
+    """
+    from app.schemas.family_schema import GiftCardShareRequest
+
+    body = GiftCardShareRequest(**payload)
+    if not body.preview_url:
+        raise HTTPException(status_code=400, detail="preview_url is required")
+
+    now = int(time.time())
+    exp = now + int((body.expire_hours or 168) * 3600)
+
+    token_payload = {
+        "preview_url": body.preview_url,
+        "iat": now,
+        "exp": exp,
+        "shared_by": current_user.id
+    }
+
+    token = jwt.encode(token_payload, settings.SECRET_KEY or "", algorithm=settings.ALGORITHM or "HS256")
+    share_url = f"{str(api_request.base_url).rstrip('/')}/api/v1/family/gift-cards/public/{token}"
+
+    whatsapp_url = None
+    if body.channels and "whatsapp" in body.channels:
+        whatsapp_url = f"https://wa.me/?text={quote_plus(share_url)}"
+
+    return APIResponse(status="success", message="Share link generated", data={"share_url": share_url, "whatsapp_url": whatsapp_url, "expires_at": exp})
+
+
+# PUBLIC: Resolve a share token and return the preview_url (used by recipients)
+@router.get("/gift-cards/public/{token}", response_model=APIResponse)
+async def public_gift_card(token: str, api_request: Request, db: Session = Depends(get_db)):
+    try:
+        data = jwt.decode(token, settings.SECRET_KEY or "", algorithms=[settings.ALGORITHM or "HS256"])
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    preview_url = data.get("preview_url")
+    if not preview_url:
+        raise HTTPException(status_code=400, detail="Invalid token payload")
+
+    # Convert to absolute URL if it's a relative path
+    full_preview = preview_url
+    if not preview_url.startswith("http"):
+        full_preview = get_full_url(api_request, preview_url)
+
+    return APIResponse(status="success", message="Public card resolved", data={"preview_url": full_preview})
+
+
+# DOWNLOAD: Return a download URL for a ready preview URL
+@router.post("/gift-cards/download", response_model=APIResponse)
+async def download_gift_card(payload: dict, api_request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Return a download URL and filename for a provided preview_url.
+    Body: { "preview_url": "...", "inline": false }
+    """
+    from app.schemas.family_schema import GiftCardDownloadRequest
+
+    body = GiftCardDownloadRequest(**payload)
+    if not body.preview_url:
+        raise HTTPException(status_code=400, detail="preview_url is required")
+
+    # If it's already absolute, return it; otherwise build full URL
+    download_url = body.preview_url
+    if not download_url.startswith("http"):
+        download_url = get_full_url(api_request, download_url)
+
+    filename = os.path.basename(download_url.split("?")[0]) or f"gift_card_{int(time.time())}.png"
+    return APIResponse(status="success", message="Download URL generated", data={"download_url": download_url, "filename": filename, "content_type": "image/png"})
 
 @router.get("/home/header", response_model=APIResponse[HomeHeaderResponse])
 async def get_home_header(

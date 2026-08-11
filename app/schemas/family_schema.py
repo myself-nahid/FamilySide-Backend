@@ -255,3 +255,31 @@ class GiftCardDesignDetailResponse(BaseModel):
     is_active: bool
     creator_id: Optional[int] = None
     created_at: Optional[str] = None
+
+
+# Share / Download schemas for ready-made cards
+class GiftCardShareRequest(BaseModel):
+    preview_url: str
+    expire_hours: Optional[int] = 168
+    channels: Optional[List[str]] = []
+
+class GiftCardShareResponse(BaseModel):
+    card_id: Optional[int] = None
+    share_url: str
+    whatsapp_url: Optional[str] = None
+    expires_at: int
+
+class GiftCardDownloadRequest(BaseModel):
+    preview_url: str
+    inline: Optional[bool] = False
+
+class GiftCardDownloadResponse(BaseModel):
+    card_id: Optional[int] = None
+    download_url: str
+    filename: Optional[str] = None
+    content_type: Optional[str] = "image/png"
+    expires_at: Optional[int] = None
+
+class PublicGiftCardResponse(BaseModel):
+    preview_url: str
+    message: Optional[str] = None
