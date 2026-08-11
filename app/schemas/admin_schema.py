@@ -274,6 +274,19 @@ class GiftDetailResponse(BaseModel):
     # Mock 'Includes' array for the UI design in Image 3
     includes: List[str] = []
 
+class GiftCardDesignItem(BaseModel):
+    id: int
+    image_url: str
+    is_active: bool
+    created_at: datetime.datetime
+
+class GiftCardDesignDetailResponse(BaseModel):
+    id: int
+    image_url: str
+    is_active: bool
+    creator_id: Optional[int] = None
+    created_at: datetime.datetime
+
 class TaxonomyRequest(BaseModel):
     name: str
 

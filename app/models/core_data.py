@@ -84,6 +84,16 @@ class PlatformItem(Base):
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
 
+class GiftCardDesign(Base):
+    __tablename__ = "gift_card_designs"
+    id = Column(Integer, primary_key=True, index=True)
+    image_url = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    creator_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    creator = relationship("User", backref="gift_card_designs")
+
 class Notification(Base):
     __tablename__ = "notifications"
     

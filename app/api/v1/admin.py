@@ -6,7 +6,7 @@ from sqlalchemy import func
 from app.api.deps import get_db, get_current_admin
 from app.core.utils import get_full_url
 from app.models.user import User, Child, Interest
-from app.models.core_data import LegalDocument, PlatformItem, Category, SupportMessage, Tag, SubCategory, Notification
+from app.models.core_data import LegalDocument, PlatformItem, Category, SupportMessage, Tag, SubCategory, Notification, GiftCardDesign
 from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, or_
@@ -24,7 +24,7 @@ from app.schemas.admin_schema import (
 )
 from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
-    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, AdminProfileResponse, AIFlyerExtractionResponse, GiftAIFlyerExtractionResponse
+    ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, GiftCardDesignItem, GiftCardDesignDetailResponse, AdminProfileResponse, AIFlyerExtractionResponse, GiftAIFlyerExtractionResponse
 )
 from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem, LegalDocumentRequest, InterestRequest, InterestResponseItem
 from app.core.security import get_password_hash, verify_password
@@ -2230,6 +2230,98 @@ async def block_gift(gift_id: int, db: Session = Depends(get_db), admin: User = 
     gift.status = "blocked"
     db.commit()
     return APIResponse(status="success", message="Gift blocked successfully")
+
+
+# 6.6 CARD DESIGN MANAGEMENT
+@router.post("/gift-card-designs", response_model=APIResponse[None])
+async def create_gift_card_design(
+    request: Request,
+    image_file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    form = await request.form()
+    upload_file = form.get("image") or form.get("image_file") or image_file
+    if not upload_file:
+        raise HTTPException(status_code=400, detail="Card design image is required")
+
+    if hasattr(upload_file, "filename") and upload_file.filename:
+        UPLOAD_DIR = "uploads/gift_card_designs"
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        file_extension = upload_file.filename.split(".")[-1]
+        file_path = os.path.join(UPLOAD_DIR, f"gift_card_design_{datetime.utcnow().timestamp()}.{file_extension}")
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(upload_file.file, buffer)
+        saved_image_path = f"/{file_path}".replace("\\", "/")
+    else:
+        text_url = str(upload_file).strip()
+        if not text_url:
+            raise HTTPException(status_code=400, detail="Card design image is required")
+        saved_image_path = text_url
+
+    design = GiftCardDesign(
+        image_url=saved_image_path,
+        is_active=True,
+        creator_id=admin.id
+    )
+    db.add(design)
+    db.commit()
+    return APIResponse(status="success", message="Gift card design created successfully")
+
+@router.get("/gift-card-designs", response_model=APIResponse[dict])
+async def get_gift_card_designs(
+    page: int = 1,
+    limit: int = 20,
+    search: Optional[str] = None,
+    api_request: Request = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    query = db.query(GiftCardDesign)
+    total_count = query.count()
+    designs = query.order_by(GiftCardDesign.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+
+    data = [GiftCardDesignItem(
+        id=d.id,
+        image_url=get_full_url(api_request, d.image_url),
+        is_active=d.is_active,
+        created_at=d.created_at
+    ) for d in designs]
+
+    return APIResponse(status="success", message="Gift card designs fetched", data={"total": total_count, "page": page, "limit": limit, "items": data})
+
+@router.get("/gift-card-designs/{design_id}", response_model=APIResponse[GiftCardDesignDetailResponse])
+async def get_gift_card_design_detail(
+    design_id: int,
+    api_request: Request = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    design = db.query(GiftCardDesign).filter(GiftCardDesign.id == design_id).first()
+    if not design:
+        raise HTTPException(status_code=404, detail="Gift card design not found")
+
+    return APIResponse(
+        status="success",
+        message="Gift card design fetched",
+        data=GiftCardDesignDetailResponse(
+            id=design.id,
+            image_url=get_full_url(api_request, design.image_url),
+            is_active=design.is_active,
+            creator_id=design.creator_id,
+            created_at=design.created_at
+        )
+    )
+
+@router.delete("/gift-card-designs/{design_id}", response_model=APIResponse[None])
+async def delete_gift_card_design(design_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    design = db.query(GiftCardDesign).filter(GiftCardDesign.id == design_id).first()
+    if not design:
+        raise HTTPException(status_code=404, detail="Gift card design not found")
+
+    db.delete(design)
+    db.commit()
+    return APIResponse(status="success", message="Gift card design deleted successfully")
 
 
 """7. TAXONOMY MANAGEMENT (Categories, Sub-Categories, Tags)
