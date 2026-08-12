@@ -989,12 +989,15 @@ async def explore_items_list(
     min_rating: Optional[float] = None,
     child_age: Optional[str] = None,
     price_type: str = "All",
+    # ADDED PAGINATION PARAMETERS 
+    page: int = 1,
+    limit: int = 10,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Powerful extraction engine that powers the 'Explore' tabs.
-    Calculates distance and filters by age/price/rating dynamically.
+    Calculates distance and filters by age/price/rating dynamically, now with pagination.
     """
     query = db.query(PlatformItem).filter(PlatformItem.status == "approved", PlatformItem.item_type == item_type)
     
@@ -1020,7 +1023,7 @@ async def explore_items_list(
             id=item.id,
             item_type=item.item_type,
             name=item.name,
-            image_url=item.image_url,
+            image_url=item.image_url, # Remember to wrap in get_full_url(api_request, item.image_url) if needed later
             category_name=item.category.name if item.category else "Health",
             price=item.price,
             distance_km=dist,
@@ -1033,7 +1036,22 @@ async def explore_items_list(
     # Sort by Distance
     processed_cards.sort(key=lambda x: x.distance_km if x.distance_km is not None else 999)
 
-    return APIResponse(status="success", message="Results loaded", data={"items": processed_cards})
+    # ADDED PAGINATION LOGIC 
+    total_count = len(processed_cards)
+    start_idx = (page - 1) * limit
+    end_idx = start_idx + limit
+    paginated_items = processed_cards[start_idx:end_idx]
+
+    return APIResponse(
+        status="success", 
+        message="Results loaded", 
+        data={
+            "total": total_count,
+            "page": page,
+            "limit": limit,
+            "items": paginated_items
+        }
+    )
 
 
 # 2. GIFT LIST MANAGEMENT 
