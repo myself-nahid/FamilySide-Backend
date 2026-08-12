@@ -81,9 +81,14 @@ async def get_occasions(api_request: Request, db: Session = Depends(get_db), cur
     items = [ {k:v for k,v in v.items() if k in ("id","key","label","image_url")} for v in seen.values() ]
     return APIResponse(status="success", message="Occasions fetched", data={"items": items})
 
-
 @router.get("/gift-card-designs", response_model=APIResponse)
-async def list_gift_card_designs(page: int = 1, limit: int = 20, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def list_gift_card_designs(
+    api_request: Request, 
+    page: int = 1, 
+    limit: int = 20, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
     """List active gift card designs uploaded by admins"""
     from app.models.core_data import GiftCardDesign
 
@@ -95,7 +100,7 @@ async def list_gift_card_designs(page: int = 1, limit: int = 20, db: Session = D
     for d in designs:
         items.append({
             "id": d.id,
-            "image_url": get_full_url(None, d.image_url) if d.image_url else None,
+            "image_url": get_full_url(api_request, d.image_url) if d.image_url else None, 
             "is_active": d.is_active,
             "created_at": d.created_at.isoformat() if d.created_at else None
         })
@@ -104,7 +109,12 @@ async def list_gift_card_designs(page: int = 1, limit: int = 20, db: Session = D
 
 
 @router.get("/gift-card-designs/{design_id}", response_model=APIResponse)
-async def get_gift_card_design(design_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_gift_card_design(
+    design_id: int, 
+    api_request: Request, 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
     """Return a single gift card design detail"""
     from app.models.core_data import GiftCardDesign
 
@@ -114,9 +124,10 @@ async def get_gift_card_design(design_id: int, db: Session = Depends(get_db), cu
 
     data = {
         "id": d.id,
-        "image_url": get_full_url(None, d.image_url) if d.image_url else None,
+        # --- 4. PASS 'api_request' INSTEAD OF 'None' ---
+        "image_url": get_full_url(api_request, d.image_url) if d.image_url else None,
         "is_active": d.is_active,
-        "creator_id": d.creator_id,
+        "creator_id": getattr(d, 'creator_id', None),
         "created_at": d.created_at.isoformat() if d.created_at else None
     }
 
