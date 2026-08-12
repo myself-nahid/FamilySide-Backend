@@ -44,21 +44,41 @@ async def get_occasions(api_request: Request, db: Session = Depends(get_db), cur
     lists = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
 
     seen = {}
+    # Prefer lists that have an image_url or the most recently updated one
     for l in lists:
         occ = (l.occasion or l.name or "general").strip()
         if not occ:
             continue
         key = occ.lower().replace(" ", "_")
-        if key in seen:
-            continue
-        seen[key] = {
+
+        candidate = {
             "id": l.id,
             "key": key,
             "label": occ if occ else l.name,
-            "image_url": get_full_url(api_request, l.image_url) if getattr(l, 'image_url', None) else None
+            "image_url": get_full_url(api_request, l.image_url) if getattr(l, 'image_url', None) else None,
+            "updated_at": getattr(l, 'updated_at', None)
         }
 
-    items = list(seen.values())
+        if key not in seen:
+            seen[key] = candidate
+            continue
+
+        # If existing candidate has no image but current has one, prefer current
+        existing = seen[key]
+        if not existing.get("image_url") and candidate.get("image_url"):
+            seen[key] = candidate
+            continue
+
+        # Otherwise prefer the one with later updated_at if available
+        try:
+            if existing.get("updated_at") and candidate.get("updated_at"):
+                if candidate["updated_at"] > existing["updated_at"]:
+                    seen[key] = candidate
+        except Exception:
+            pass
+
+    # Strip helper keys before returning
+    items = [ {k:v for k,v in v.items() if k in ("id","key","label","image_url")} for v in seen.values() ]
     return APIResponse(status="success", message="Occasions fetched", data={"items": items})
 
 
