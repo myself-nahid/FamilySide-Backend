@@ -38,7 +38,7 @@ router = APIRouter(prefix="/family", tags=["Family App - Home"])
 
 # --- Gift Card: Occasions & Designs (Family-facing) ---
 @router.get("/occasions", response_model=APIResponse)
-async def get_occasions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_occasions(api_request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Return a curated list of occasions (pill buttons) for the UI"""
     # Return only occasions that the user has already added as Gift Lists (deduplicated)
     lists = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
@@ -55,7 +55,7 @@ async def get_occasions(db: Session = Depends(get_db), current_user: User = Depe
             "id": l.id,
             "key": key,
             "label": occ if occ else l.name,
-            "image_url": get_full_url(None, l.image_url) if getattr(l, 'image_url', None) else None
+            "image_url": get_full_url(api_request, l.image_url) if getattr(l, 'image_url', None) else None
         }
 
     items = list(seen.values())
@@ -1018,7 +1018,7 @@ async def get_my_gift_lists(db: Session = Depends(get_db), current_user: User = 
         db.commit()
         lists = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
 
-    data = [GiftListResponse(id=l.id, name=l.name, items_count=len(l.items)) for l in lists]
+    data = [GiftListResponse(id=l.id, name=l.name, items_count=len(l.saved_items)) for l in lists]
     return APIResponse(status="success", message="Lists fetched", data=data)
 
 
