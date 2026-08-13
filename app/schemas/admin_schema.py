@@ -207,6 +207,8 @@ class CreateActivityRequest(BaseModel):
     opening_hours: Optional[str] = None
     description: str
 
+class BulkDeleteRequest(BaseModel):
+    ids: List[int]
 class EventListItem(BaseModel):
     id: int
     name: str

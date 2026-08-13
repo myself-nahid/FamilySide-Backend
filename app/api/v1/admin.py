@@ -26,6 +26,8 @@ from app.schemas.admin_schema import (
     DashboardStatsResponse, UserActionRequest, 
     ItemStatusUpdateRequest, CreateItemRequest, AdminProfileUpdateRequest, UserDetailResponse, ChildResponse, NotificationItem, ItemReviewDetailResponse, ActivityListItem, ActivityDetailResponse, CreateActivityRequest, EventListItem, EventDetailResponse, GiftListItem, GiftDetailResponse, GiftCardDesignItem, GiftCardDesignDetailResponse, AdminProfileResponse, AIFlyerExtractionResponse, GiftAIFlyerExtractionResponse
 )
+
+from app.schemas.admin_schema import BulkDeleteRequest
 from app.schemas.admin_schema import TaxonomyRequest, SubCategoryRequest, TaxonomyResponseItem, LegalDocumentRequest, InterestRequest, InterestResponseItem
 from app.core.security import get_password_hash, verify_password
 from typing import List
@@ -1462,6 +1464,35 @@ async def delete_activity(
     db.commit()
     
     return APIResponse(status="success", message="Activity deleted successfully")
+
+@router.post("/activities/bulk-delete", response_model=APIResponse[dict])
+async def bulk_delete_activities(
+    payload: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Delete multiple activities by ID. Returns count of deleted items and any errors."""
+    ids = payload.ids or []
+    if not ids:
+        raise HTTPException(status_code=400, detail="No activity IDs provided for deletion")
+
+    deleted_count = 0
+    errors = []
+
+    for item_id in ids:
+        item = db.query(PlatformItem).filter(PlatformItem.id == item_id, PlatformItem.item_type == "activity").first()
+        if not item:
+            errors.append(f"Activity ID {item_id} not found")
+            continue
+        try:
+            db.delete(item)
+            deleted_count += 1
+        except Exception as e:
+            errors.append(f"Failed to delete {item_id}: {str(e)}")
+
+    db.commit()
+
+    return APIResponse(status="success", message=f"Deleted {deleted_count} activities", data={"deleted": deleted_count, "errors": errors})
 
 
 # 4.5 BLOCK ACTIVITY 
