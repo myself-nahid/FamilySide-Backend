@@ -1441,6 +1441,19 @@ async def bulk_upload_activities(
                         existing_item.price = float(row.get('price'))
                     if 'image_url' in df.columns:
                         existing_item.image_url = final_image_path
+                    # Contact and opening-hours (only if column present)
+                    if 'website' in df.columns:
+                        existing_item.website = row.get('website')
+                    if 'whatsapp' in df.columns:
+                        existing_item.whatsapp = str(row.get('whatsapp')) if row.get('whatsapp') is not None else None
+                    if 'email' in df.columns:
+                        existing_item.email = row.get('email')
+                    if 'instagram' in df.columns:
+                        existing_item.instagram = row.get('instagram')
+                    if 'opening_days' in df.columns:
+                        existing_item.opening_days = row.get('opening_days')
+                    if 'opening_hours' in df.columns:
+                        existing_item.opening_hours = row.get('opening_hours')
                     # Update category/tags/sub_categories if provided in the file
                     if 'category_id' in df.columns:
                         existing_item.category_id = cat_id
@@ -1465,6 +1478,12 @@ async def bulk_upload_activities(
                         category_id=cat_id,
                         price=price_conv,
                         description=str(row.get('description')) if row.get('description') is not None else None,
+                        website=row.get('website') if 'website' in df.columns else None,
+                        whatsapp=str(row.get('whatsapp')) if ('whatsapp' in df.columns and row.get('whatsapp') is not None) else None,
+                        email=row.get('email') if 'email' in df.columns else None,
+                        instagram=row.get('instagram') if 'instagram' in df.columns else None,
+                        opening_days=row.get('opening_days') if 'opening_days' in df.columns else None,
+                        opening_hours=row.get('opening_hours') if 'opening_hours' in df.columns else None,
                         sub_categories=format_list(row.get('sub_categories')),
                         tags=format_list(row.get('tags')),
                         image_url=final_image_path,
