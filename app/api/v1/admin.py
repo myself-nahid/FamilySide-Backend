@@ -11,6 +11,7 @@ from app.schemas.auth_schema import APIResponse, ChangePasswordRequest
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, or_
 import pandas as pd
+import numpy as np
 from io import BytesIO
 import os
 import shutil
@@ -1355,11 +1356,16 @@ async def bulk_upload_activities(
     try:
         contents = await file.read()
         df = pd.read_excel(BytesIO(contents))
-        
+
         # 1. Typo-proofing and Header Cleaning
         column_mapping = {'ing': 'lng', 'Name': 'name', 'Location': 'location'}
         df.rename(columns=column_mapping, inplace=True)
-        df = df.where(pd.notnull(df), None)
+
+        # Robust NaN -> None normalization (pandas versions differ)
+        df = df.replace({np.nan: None})
+
+        # Prefetch valid category ids to validate rows before commit
+        valid_cat_ids = {cid for (cid,) in db.query(Category.id).all()}
 
         success_count = 0
         update_count = 0
@@ -1374,9 +1380,12 @@ async def bulk_upload_activities(
                     errors.append(f"Row {row_num}: Missing Name or Location.")
                     continue
 
-                cat_id = int(row['category_id']) if row.get('category_id') else None
-                if not cat_id:
+                cat_id = int(row['category_id']) if row.get('category_id') is not None else None
+                if cat_id is None:
                     errors.append(f"Row {row_num}: Missing category_id.")
+                    continue
+                if cat_id not in valid_cat_ids:
+                    errors.append(f"Row {row_num}: Unknown category_id {cat_id}.")
                     continue
 
                 lat_val = row.get('lat')
@@ -1409,24 +1418,41 @@ async def bulk_upload_activities(
                 final_image_path = str(raw_img).strip().replace("\\", "/") if raw_img else DEFAULT_IMAGE
 
                 if existing_item:
-                    # Update Existing
-                    existing_item.lat = lat_val
-                    existing_item.lng = lng_val
-                    existing_item.description = str(row.get('description', ''))
-                    existing_item.price = float(row.get('price', 0.0))
-                    existing_item.image_url = final_image_path
+                    # Update Existing — only overwrite fields if the column is present in the file
+                    if 'lat' in df.columns and lat_val is not None:
+                        existing_item.lat = float(lat_val)
+                    if 'lng' in df.columns and lng_val is not None:
+                        existing_item.lng = float(lng_val)
+                    if 'description' in df.columns and row.get('description') is not None:
+                        existing_item.description = str(row.get('description'))
+                    if 'price' in df.columns and row.get('price') is not None:
+                        existing_item.price = float(row.get('price'))
+                    if 'image_url' in df.columns:
+                        existing_item.image_url = final_image_path
+                    # Update category/tags/sub_categories if provided in the file
+                    if 'category_id' in df.columns:
+                        existing_item.category_id = cat_id
+                    if 'sub_categories' in df.columns:
+                        existing_item.sub_categories = format_list(row.get('sub_categories'))
+                    if 'tags' in df.columns:
+                        existing_item.tags = format_list(row.get('tags'))
                     update_count += 1
                 else:
                     # Create New
+                    # Ensure numeric conversions handle None
+                    lat_conv = float(lat_val) if lat_val is not None else None
+                    lng_conv = float(lng_val) if lng_val is not None else None
+                    price_conv = float(row.get('price')) if row.get('price') is not None else 0.0
+
                     new_activity = PlatformItem(
                         item_type="activity",
                         name=str(row['name']).strip(),
                         location=address,
-                        lat=lat_val,
-                        lng=lng_val,
+                        lat=lat_conv,
+                        lng=lng_conv,
                         category_id=cat_id,
-                        price=float(row.get('price', 0.0)),
-                        description=str(row.get('description', '')),
+                        price=price_conv,
+                        description=str(row.get('description')) if row.get('description') is not None else None,
                         sub_categories=format_list(row.get('sub_categories')),
                         tags=format_list(row.get('tags')),
                         image_url=final_image_path,
