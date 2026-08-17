@@ -1392,8 +1392,27 @@ async def bulk_upload_activities(
                 lng_val = row.get('lng')
                 address = str(row['location']).strip()
 
-                # If coordinates are missing, fetch them from Google
-                if (not lat_val or not lng_val) and address and gmaps:
+                # Duplicate Check — do this BEFORE any external geocoding calls
+                existing_item = db.query(PlatformItem).filter(
+                    PlatformItem.name == str(row['name']).strip(),
+                    PlatformItem.location == address,
+                    PlatformItem.item_type == "activity"
+                ).first()
+
+                # If coordinates are missing, fetch them from Google ONLY when we need them:
+                # - creating a new item, or
+                # - updating an existing item that has no stored coordinates and the file provides none
+                need_geocode = False
+                if gmaps and address:
+                    if not existing_item and (not lat_val or not lng_val):
+                        need_geocode = True
+                    elif existing_item:
+                        db_has_coords = existing_item.lat is not None and existing_item.lng is not None
+                        file_has_coords = lat_val is not None and lng_val is not None
+                        if (not db_has_coords) and (not file_has_coords):
+                            need_geocode = True
+
+                if need_geocode:
                     try:
                         geocode_result = gmaps.geocode(address)
                         if geocode_result:
@@ -1402,13 +1421,6 @@ async def bulk_upload_activities(
                             lng_val = loc['lng']
                     except Exception as geo_err:
                         print(f"Geocoding failed for row {row_num}: {geo_err}")
-
-                # Duplicate Check
-                existing_item = db.query(PlatformItem).filter(
-                    PlatformItem.name == str(row['name']).strip(),
-                    PlatformItem.location == address,
-                    PlatformItem.item_type == "activity"
-                ).first()
 
                 def format_list(val):
                     if not val: return []
