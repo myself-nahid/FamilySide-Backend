@@ -31,13 +31,10 @@ import googlemaps
 from urllib.parse import quote_plus
 import time
 
+# Router for family-facing endpoints
+router = APIRouter(prefix="/family", tags=["Family"])
+
 from app.services.email_service import send_support_alert_to_admin
-
-router = APIRouter(prefix="/family", tags=["Family App - Home"])
-
-
-# --- Gift Card: Occasions & Designs (Family-facing) ---
-@router.get("/occasions", response_model=APIResponse)
 async def get_occasions(api_request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Return a curated list of occasions (pill buttons) for the UI"""
     # Return only occasions that the user has already added as Gift Lists (deduplicated)
@@ -259,6 +256,9 @@ async def get_home_feed(
     category_id: Optional[int] = None,    # From the Category Pill buttons
     sort_by: Optional[str] = "distance",  # Options: distance, price, newest
     limit: int = 10,                      # How many cards to show per section
+    # Accept app-side filter names: age_range (comma-joined) and price
+    age_range: Optional[str] = Query(None, alias="age_range"),
+    price: Optional[str] = Query(None, alias="price"),
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
@@ -273,10 +273,10 @@ async def get_home_feed(
     
     # 2. Get user's saved items to highlight the bookmark icon
     saved_item_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
-    
+
     # 3. Base Query Engine (Only approved items)
     base_query = db.query(PlatformItem).filter(PlatformItem.status == "approved")
-    
+
     # Apply Search Filter (Matches Name or Description)
     if search:
         base_query = base_query.filter(
@@ -285,88 +285,87 @@ async def get_home_feed(
                 PlatformItem.description.ilike(f"%{search}%")
             )
         )
-        
+
     # Apply Category Filter
     if category_id:
         base_query = base_query.filter(PlatformItem.category_id == category_id)
 
-    # 4. Helper Function to Process and Sort Data
-    def process_and_sort_items(items, is_event=False):
-        processed_list = []
-        for item in items:
-            absolute_image_url = get_full_url(api_request, item.image_url)
-            dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
-            
-            # --- IMPROVED DATE LOGIC ---
-            # If item has a specific date, use it. 
-            # Fallback to created_at if no specific date is set.
-            display_date = item.date or item.created_at
-            date_label = display_date.strftime("%d %B, %Y") if display_date else None
-            # ---------------------------
+    # Normalize price filter: accept app alias `price` if present
+    final_price_type = price or None
+    if final_price_type == "Free":
+        base_query = base_query.filter(PlatformItem.price == 0)
+    elif final_price_type == "Paid":
+        base_query = base_query.filter(PlatformItem.price > 0)
 
-            age_range = "0-20 years"
+    # Prepare requested ages list (supports comma-joined values from app)
+    requested_ages = []
+    if age_range:
+        requested_ages = [a.strip() for a in age_range.split(',') if a.strip()]
+
+    # Helper to build cards and sort
+    def process_and_sort_items(items, is_event=False):
+        processed = []
+        for item in items:
+            # Age filter (client may request multiple ages)
+            if requested_ages:
+                tags = item.tags if item.tags and isinstance(item.tags, list) else []
+                if not any(req in tags for req in requested_ages):
+                    continue
+
+            dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
+            age_label = "0-20 years"
             if item.tags and isinstance(item.tags, list):
                 age_tags = [t for t in item.tags if "year" in t.lower() or "age" in t.lower()]
-                if age_tags: age_range = age_tags[0]
+                if age_tags:
+                    age_label = age_tags[0]
 
             card = HomeItemCard(
                 id=item.id,
                 item_type=item.item_type,
                 name=item.name,
-                image_url=absolute_image_url,
+                image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
                 category_name=item.category.name if item.category else "General",
                 price=item.price or 0.0,
-                distance_km=dist, # Will show a number if coordinates exist in DB
-                age_range=age_range,
-                date_label=date_label, # Now returns a string instead of null
+                distance_km=dist,
+                age_range=age_label,
+                date_label=item.date.strftime("%d %b") if item.date else None,
                 is_recommended=True,
                 is_saved=(item.id in saved_item_ids)
             )
-            
-            processed_list.append({
-                "card": card, 
-                "raw_distance": dist if dist is not None else 9999.0,
-                "raw_price": item.price or 0.0,
-                "raw_date": item.created_at or datetime.min
-            })
-            
-        # Apply Advanced Sorting
+            processed.append({"card": card, "dist": dist if dist is not None else 9999.0})
+
+        # Sorting
         if sort_by == "distance":
-            processed_list.sort(key=lambda x: x["raw_distance"])
+            processed.sort(key=lambda x: x["dist"])
         elif sort_by == "price":
-            processed_list.sort(key=lambda x: x["raw_price"])
+            processed.sort(key=lambda x: (x["card"].price or 0.0))
         elif sort_by == "newest":
-            processed_list.sort(key=lambda x: x["raw_date"], reverse=True)
-            
-        # Extract just the cards and apply the limit
-        return [p["card"] for p in processed_list[:limit]]
+            processed.sort(key=lambda x: (x["card"].date_label or ""), reverse=True)
 
-    # 5. Execute Queries
-    # Recommended For You (Activities)
-    activities = base_query.filter(PlatformItem.item_type == "activity").all()
-    recommended_cards = process_and_sort_items(activities, is_event=False)
+        return [p["card"] for p in processed[:limit]]
 
-    # Events Near You
+    # Build main feed sections using the base_query
+    # Recommended Activities (sample by item_type)
+    rec_query = base_query.filter(PlatformItem.item_type == "activity")
+    rec_items = rec_query.all()
+    rec_cards = process_and_sort_items(rec_items)
+
+    # Nearby Events
     now = datetime.utcnow()
-    # Events should strictly be in the future
-    events = base_query.filter(
-        and_(
-            PlatformItem.item_type == "event",
-            PlatformItem.date >= now.date()
-        )
-    ).all()
-    event_cards = process_and_sort_items(events, is_event=True)
+    events_query = base_query.filter(PlatformItem.item_type == "event", PlatformItem.date >= now.date())
+    event_items = events_query.all()
+    event_cards = process_and_sort_items(event_items, is_event=True)
 
-    # 6. Return Unified Payload
     return APIResponse(
-        status="success", 
-        message="Filtered and sorted feed loaded",
+        status="success",
+        message="Home feed fetched",
         data=HomeFeedResponse(
             categories=cat_tabs,
-            recommended=recommended_cards,
-            events_near_you=event_cards
+            recommended=rec_cards,
+            events=event_cards
         )
     )
+
 
 # SEE ALL: RECOMMENDED ACTIVITIES
 @router.get("/activities/recommended", response_model=APIResponse[dict])
@@ -992,6 +991,9 @@ async def explore_items_list(
     # ADDED PAGINATION PARAMETERS 
     page: int = 1,
     limit: int = 10,
+    # Accept app-side aliases
+    age_range: Optional[str] = Query(None, alias="age_range"),
+    price: Optional[str] = Query(None, alias="price"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1003,11 +1005,18 @@ async def explore_items_list(
     
     if category_id: query = query.filter(PlatformItem.category_id == category_id)
     if search: query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
-    if price_type == "Free": query = query.filter(PlatformItem.price == 0)
-    elif price_type == "Paid": query = query.filter(PlatformItem.price > 0)
+    final_price_type = price or price_type
+    if final_price_type == "Free": query = query.filter(PlatformItem.price == 0)
+    elif final_price_type == "Paid": query = query.filter(PlatformItem.price > 0)
 
     raw_items = query.all()
     processed_cards = []
+
+    # Prepare requested ages list (supports comma-joined values from app)
+    requested_ages = []
+    final_child_age_str = age_range or child_age
+    if final_child_age_str:
+        requested_ages = [a.strip() for a in final_child_age_str.split(',') if a.strip()]
     
     # User's saved item IDs for the bookmark icon state
     user_saved_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
@@ -1017,7 +1026,10 @@ async def explore_items_list(
         
         # UI Filters
         if max_distance and (dist is None or dist > max_distance): continue
-        if child_age and (not item.tags or child_age not in item.tags): continue
+        if requested_ages:
+            tags = item.tags if item.tags and isinstance(item.tags, list) else []
+            if not any(req in tags for req in requested_ages):
+                continue
 
         processed_cards.append(HomeItemCard(
             id=item.id,
@@ -1027,7 +1039,7 @@ async def explore_items_list(
             category_name=item.category.name if item.category else "Health",
             price=item.price,
             distance_km=dist,
-            age_range=child_age or "0-20 years",
+            age_range=final_child_age_str or "0-20 years",
             date_label=item.date.strftime("%d %b") if item.date else None,
             is_recommended=True,
             is_saved=(item.id in user_saved_ids)

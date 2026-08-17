@@ -18,3 +18,4 @@ openai
 pandas 
 openpyxl
 googlemaps
+numpy
