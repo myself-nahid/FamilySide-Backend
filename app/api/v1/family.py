@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from typing import List, Optional
 from datetime import datetime
+import re
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
@@ -33,6 +34,85 @@ import time
 
 # Router for family-facing endpoints
 router = APIRouter(prefix="/family", tags=["Family"])
+
+AGE_BRACKET_ALIASES = {
+    "0-2": {"0-2", "0-2 anni", "0-2 years", "0-2 yrs", "0-2 years old", "0-3", "0-3 years", "0-3 yrs"},
+    "3-5": {"3-5", "3-5 anni", "3-5 years", "3-5 yrs", "3-5 years old", "3-6", "3-6 years", "3-6 yrs"},
+    "6-10": {"6-10", "6-10 anni", "6-10 years", "6-10 yrs", "6-10 years old", "6-10", "8-13", "8-13 years", "8-13 yrs"},
+    "11-13": {"11-13", "11-13 anni", "11-13 years", "11-13 yrs", "11-13 years old"},
+    "14+": {"14+", "14+ years", "14+ yrs", "14+ years old", "15+", "15+ years", "15+ yrs", "10+", "10+ years", "10+ yrs"},
+}
+
+
+def normalize_age_value(value):
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    normalized = raw.lower().replace("_", " ")
+    normalized = re.sub(r"\s+", " ", normalized)
+
+    for canonical, aliases in AGE_BRACKET_ALIASES.items():
+        if normalized == canonical.lower() or normalized in {alias.lower() for alias in aliases}:
+            return canonical
+
+    if normalized in {"all ages", "all age", "0-20 years", "0-20", "any age"}:
+        return None
+
+    return raw.strip()
+
+
+def parse_requested_age_values(raw_age_value):
+    if not raw_age_value:
+        return []
+    values = []
+    for part in str(raw_age_value).split(','):
+        normalized = normalize_age_value(part)
+        if normalized:
+            values.append(normalized)
+    return values
+
+
+def extract_item_age_value(tags):
+    if not tags or not isinstance(tags, list):
+        return ""
+
+    values = []
+    for tag in tags:
+        normalized = normalize_age_value(tag)
+        if normalized:
+            values.append(normalized)
+
+    if not values:
+        return ""
+
+    return values[0]
+
+
+def item_matches_age_filter(item, requested_ages):
+    if not requested_ages:
+        return True
+
+    tags = item.tags if item.tags and isinstance(item.tags, list) else []
+    if not tags:
+        return True
+
+    normalized_tags = []
+    for tag in tags:
+        normalized = normalize_age_value(tag)
+        if normalized:
+            normalized_tags.append(normalized)
+
+    if not normalized_tags:
+        return True
+
+    for requested in requested_ages:
+        if requested in normalized_tags:
+            return True
+    return False
+
 
 from app.services.email_service import send_support_alert_to_admin
 @router.get("/occasions", response_model=APIResponse)
@@ -299,26 +379,18 @@ async def get_home_feed(
         base_query = base_query.filter(PlatformItem.price > 0)
 
     # Prepare requested ages list (supports comma-joined values from app)
-    requested_ages = []
-    if age_range:
-        requested_ages = [a.strip() for a in age_range.split(',') if a.strip()]
+    requested_ages = parse_requested_age_values(age_range)
 
     # Helper to build cards and sort
     def process_and_sort_items(items, is_event=False):
         processed = []
         for item in items:
             # Age filter (client may request multiple ages)
-            if requested_ages:
-                tags = item.tags if item.tags and isinstance(item.tags, list) else []
-                if not any(req in tags for req in requested_ages):
-                    continue
+            if requested_ages and not item_matches_age_filter(item, requested_ages):
+                continue
 
             dist = calculate_distance_km(current_user.lat, current_user.lng, item.lat, item.lng)
-            age_label = "0-20 years"
-            if item.tags and isinstance(item.tags, list):
-                age_tags = [t for t in item.tags if "year" in t.lower() or "age" in t.lower()]
-                if age_tags:
-                    age_label = age_tags[0]
+            age_label = extract_item_age_value(item.tags)
 
             card = HomeItemCard(
                 id=item.id,
@@ -513,6 +585,7 @@ async def get_sub_categories_for_family(
 async def get_items_by_sub_category(
     sub_category_name: str,
     item_type: str = "activity",  # 'activity' or 'event' based on Image 2 tabs
+    age: Optional[str] = Query(None, alias="age"),
     page: int = 1,
     limit: int = 10,
     db: Session = Depends(get_db),
@@ -623,6 +696,7 @@ async def search_and_filter_items(
     # We fetch results to calculate distance in Python (standard for MVP/Low volume)
     raw_items = query.all()
     processed_list = []
+    requested_ages = parse_requested_age_values(params.child_age)
 
     for item in raw_items:
         absolute_image_url = get_full_url(api_request, item.image_url)
@@ -639,10 +713,8 @@ async def search_and_filter_items(
             if params.distance_range == "10+km" and (dist is None or dist < 10): continue
 
         # B. Filter by Child Age (Modal 1 & 2)
-        # We look inside the JSONB 'tags' column for the age string
-        if params.child_age:
-            if not item.tags or params.child_age not in item.tags:
-                continue
+        if requested_ages and not item_matches_age_filter(item, requested_ages):
+            continue
 
         # C. Filter by Review Rating (Modal 1)
         # Assuming you have a 'rating' column (if not, use mock/average)
@@ -660,7 +732,7 @@ async def search_and_filter_items(
             category_name=item.category.name if item.category else "General",
             price=item.price or 0.0,
             distance_km=dist,
-            age_range=params.child_age or "0-20 years",
+            age_range=extract_item_age_value(item.tags),
             date_label=date_label,
             is_recommended=True,
             is_saved=False # Check against SavedItem table here
@@ -1017,10 +1089,8 @@ async def explore_items_list(
     processed_cards = []
 
     # Prepare requested ages list (supports comma-joined values from app)
-    requested_ages = []
     final_child_age_str = age_range or child_age
-    if final_child_age_str:
-        requested_ages = [a.strip() for a in final_child_age_str.split(',') if a.strip()]
+    requested_ages = parse_requested_age_values(final_child_age_str)
     
     # User's saved item IDs for the bookmark icon state
     user_saved_ids = [s.item_id for s in db.query(SavedItem).filter(SavedItem.user_id == current_user.id).all()]
@@ -1030,10 +1100,8 @@ async def explore_items_list(
         
         # UI Filters
         if max_distance and (dist is None or dist > max_distance): continue
-        if requested_ages:
-            tags = item.tags if item.tags and isinstance(item.tags, list) else []
-            if not any(req in tags for req in requested_ages):
-                continue
+        if requested_ages and not item_matches_age_filter(item, requested_ages):
+            continue
 
         processed_cards.append(HomeItemCard(
             id=item.id,
@@ -1043,7 +1111,7 @@ async def explore_items_list(
             category_name=item.category.name if item.category else "Health",
             price=item.price,
             distance_km=dist,
-            age_range=final_child_age_str or "0-20 years",
+            age_range=extract_item_age_value(item.tags),
             date_label=item.date.strftime("%d %b") if item.date else None,
             is_recommended=True,
             is_saved=(item.id in user_saved_ids)

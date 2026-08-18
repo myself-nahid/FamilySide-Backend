@@ -37,6 +37,36 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 
+
+def parse_list_field(raw):
+    """Accept either JSON arrays or comma-separated strings."""
+    if raw is None:
+        return []
+
+    if isinstance(raw, list):
+        return [str(v).strip() for v in raw if str(v).strip()]
+
+    if isinstance(raw, tuple):
+        return [str(v).strip() for v in raw if str(v).strip()]
+
+    value = str(raw).strip()
+    if not value:
+        return []
+
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        parsed = value
+
+    if isinstance(parsed, list):
+        return [str(v).strip() for v in parsed if str(v).strip()]
+
+    if isinstance(parsed, tuple):
+        return [str(v).strip() for v in parsed if str(v).strip()]
+
+    return [part.strip() for part in str(parsed).split(",") if part.strip()]
+
+
 openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Helper function to calculate Trend Metrics (This Week vs Last Week)
@@ -1049,15 +1079,8 @@ async def create_activity(
             saved_image_path = str(upload_file).strip() or None
 
     # 2. Parse JSON strings back to Python lists
-    parsed_sub_categories = []
-    parsed_tags = []
-    if sub_categories:
-        try: parsed_sub_categories = json.loads(sub_categories)
-        except: parsed_sub_categories = [sub_categories] # Fallback if standard string
-        
-    if tags:
-        try: parsed_tags = json.loads(tags)
-        except: parsed_tags = [tags]
+    parsed_sub_categories = parse_list_field(sub_categories)
+    parsed_tags = parse_list_field(tags)
 
     # 3. Save to Database
     # Initialize Google Maps client (optional)
@@ -1163,18 +1186,8 @@ async def update_activity(
             text_url = str(upload_file).strip()
             saved_image_path = text_url or activity.image_url
 
-    parsed_sub_categories = []
-    parsed_tags = []
-    if sub_categories:
-        try:
-            parsed_sub_categories = json.loads(sub_categories)
-        except:
-            parsed_sub_categories = [sub_categories]
-    if tags:
-        try:
-            parsed_tags = json.loads(tags)
-        except:
-            parsed_tags = [tags]
+    parsed_sub_categories = parse_list_field(sub_categories)
+    parsed_tags = parse_list_field(tags)
 
     gmaps = None
     if settings.GOOGLE_MAPS_API_KEY:
@@ -1796,20 +1809,8 @@ async def create_event(
 
 
     # 2. Parse JSON fields (Sub-categories and Tags)
-    parsed_sub = []
-    parsed_tags = []
-    
-    if sub_categories:
-        try: 
-            parsed_sub = json.loads(sub_categories)
-        except: 
-            parsed_sub = [sub_categories]
-            
-    if tags:
-        try: 
-            parsed_tags = json.loads(tags)
-        except: 
-            parsed_tags = [tags]
+    parsed_sub = parse_list_field(sub_categories)
+    parsed_tags = parse_list_field(tags)
 
 
     # 3. Parse Dates and Times safely
@@ -1901,18 +1902,8 @@ async def update_event(
     elif image_url and image_url.strip():
         saved_image_path = image_url.strip()
 
-    parsed_sub = []
-    parsed_tags = []
-    if sub_categories:
-        try:
-            parsed_sub = json.loads(sub_categories)
-        except:
-            parsed_sub = [sub_categories]
-    if tags:
-        try:
-            parsed_tags = json.loads(tags)
-        except:
-            parsed_tags = [tags]
+    parsed_sub = parse_list_field(sub_categories)
+    parsed_tags = parse_list_field(tags)
 
     parsed_date = None
     parsed_start = None
@@ -2169,15 +2160,8 @@ async def create_gift(
             saved_image_path = str(upload_file).strip() or None
 
     # 2. Parse JSON lists (Sub-categories and Tags)
-    import json
-    parsed_sub = []
-    parsed_tags = []
-    if sub_categories:
-        try: parsed_sub = json.loads(sub_categories)
-        except: parsed_sub = [sub_categories]
-    if tags:
-        try: parsed_tags = json.loads(tags)
-        except: parsed_tags = [tags]
+    parsed_sub = parse_list_field(sub_categories)
+    parsed_tags = parse_list_field(tags)
 
     # 3. Parse Date Safely
     parsed_date = None
@@ -2257,18 +2241,8 @@ async def update_gift(
             text_url = str(upload_file).strip()
             saved_image_path = text_url or gift.image_url
 
-    parsed_sub = []
-    parsed_tags = []
-    if sub_categories:
-        try:
-            parsed_sub = json.loads(sub_categories)
-        except:
-            parsed_sub = [sub_categories]
-    if tags:
-        try:
-            parsed_tags = json.loads(tags)
-        except:
-            parsed_tags = [tags]
+    parsed_sub = parse_list_field(sub_categories)
+    parsed_tags = parse_list_field(tags)
 
     parsed_date = None
     if date:
