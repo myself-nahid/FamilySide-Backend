@@ -333,7 +333,9 @@ async def get_home_feed(
                 is_recommended=True,
                 is_saved=(item.id in saved_item_ids)
             )
-            processed.append({"card": card, "dist": dist if dist is not None else 9999.0})
+            # Keep the underlying datetime to allow accurate 'newest' sorting
+            item_dt = getattr(item, 'date', None) or getattr(item, 'created_at', None)
+            processed.append({"card": card, "dist": dist if dist is not None else 9999.0, "date": item_dt})
 
         # Sorting
         if sort_by == "distance":
@@ -341,7 +343,8 @@ async def get_home_feed(
         elif sort_by == "price":
             processed.sort(key=lambda x: (x["card"].price or 0.0))
         elif sort_by == "newest":
-            processed.sort(key=lambda x: (x["card"].date_label or ""), reverse=True)
+            # Sort by the actual datetime (item.date or created_at) when available
+            processed.sort(key=lambda x: (x.get("date") or datetime.min), reverse=True)
 
         return [p["card"] for p in processed[:limit]]
 
