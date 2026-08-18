@@ -35,6 +35,7 @@ import time
 router = APIRouter(prefix="/family", tags=["Family"])
 
 from app.services.email_service import send_support_alert_to_admin
+@router.get("/occasions", response_model=APIResponse)
 async def get_occasions(api_request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Return a curated list of occasions (pill buttons) for the UI"""
     # Return only occasions that the user has already added as Gift Lists (deduplicated)
@@ -362,7 +363,7 @@ async def get_home_feed(
         data=HomeFeedResponse(
             categories=cat_tabs,
             recommended=rec_cards,
-            events=event_cards
+            events_near_you=event_cards
         )
     )
 
