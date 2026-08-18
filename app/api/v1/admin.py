@@ -1441,18 +1441,18 @@ async def bulk_upload_activities(
                         existing_item.price = float(row.get('price'))
                     if 'image_url' in df.columns:
                         existing_item.image_url = final_image_path
-                    # Contact and opening-hours (only if column present)
-                    if 'website' in df.columns:
+                    # Contact and opening-hours: only overwrite when uploaded cell is non-empty
+                    if 'website' in df.columns and row.get('website') not in (None, ''):
                         existing_item.website = row.get('website')
-                    if 'whatsapp' in df.columns:
-                        existing_item.whatsapp = str(row.get('whatsapp')) if row.get('whatsapp') is not None else None
-                    if 'email' in df.columns:
+                    if 'whatsapp' in df.columns and row.get('whatsapp') not in (None, ''):
+                        existing_item.whatsapp = str(row.get('whatsapp'))
+                    if 'email' in df.columns and row.get('email') not in (None, ''):
                         existing_item.email = row.get('email')
-                    if 'instagram' in df.columns:
+                    if 'instagram' in df.columns and row.get('instagram') not in (None, ''):
                         existing_item.instagram = row.get('instagram')
-                    if 'opening_days' in df.columns:
+                    if 'opening_days' in df.columns and row.get('opening_days') not in (None, ''):
                         existing_item.opening_days = row.get('opening_days')
-                    if 'opening_hours' in df.columns:
+                    if 'opening_hours' in df.columns and row.get('opening_hours') not in (None, ''):
                         existing_item.opening_hours = row.get('opening_hours')
                     # Update category/tags/sub_categories if provided in the file
                     if 'category_id' in df.columns:
