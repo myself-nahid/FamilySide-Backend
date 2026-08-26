@@ -730,7 +730,7 @@ async def provider_create_gift(
         path = f"uploads/gifts/prov_{current_user.id}_{datetime.utcnow().timestamp()}{ext}"
         with open(path, "wb") as buffer:
             shutil.copyfileobj(photo.file, buffer)
-        image_url = f"/{path.replace('\\', '/')}"
+        image_url = f"/{path}".replace("\\", "/")
 
     # 2. Parse Tags JSON
     try:
