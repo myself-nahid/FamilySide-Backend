@@ -1766,6 +1766,7 @@ async def create_event(
     name: str = Form(...),
     location: str = Form(...),
     category_id: int = Form(...),
+    activity_id: Optional[int] = Form(None),
     price: float = Form(0.0),
     description: str = Form(...),
     
@@ -1817,6 +1818,15 @@ async def create_event(
     parsed_sub = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
 
+    linked_activity = None
+    if activity_id is not None:
+        linked_activity = db.query(PlatformItem).filter(
+            PlatformItem.id == activity_id,
+            PlatformItem.item_type == "activity"
+        ).first()
+        if linked_activity is None:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
 
     # 3. Parse Dates and Times safely
     parsed_date = None
@@ -1847,6 +1857,7 @@ async def create_event(
         name=name,
         location=location,
         category_id=category_id,
+        linked_activity_id=linked_activity.id if linked_activity else None,
         price=price,
         description=description,
         website=website,
@@ -2131,6 +2142,7 @@ async def create_gift(
     name: str = Form(...),
     location: str = Form(...),
     category_id: int = Form(...),
+    activity_id: Optional[int] = Form(None),
     price: float = Form(0.0),
     description: str = Form(...),
     
@@ -2168,6 +2180,15 @@ async def create_gift(
     parsed_sub = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
 
+    linked_activity = None
+    if activity_id is not None:
+        linked_activity = db.query(PlatformItem).filter(
+            PlatformItem.id == activity_id,
+            PlatformItem.item_type == "activity"
+        ).first()
+        if linked_activity is None:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
     # 3. Parse Date Safely
     parsed_date = None
     if date:
@@ -2182,6 +2203,7 @@ async def create_gift(
         name=name,
         location=location,
         category_id=category_id,
+        linked_activity_id=linked_activity.id if linked_activity else None,
         price=price,
         description=description,
         website=website,

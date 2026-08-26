@@ -610,6 +610,7 @@ async def provider_create_event(
     lat: Optional[float] = Form(None),
     lng: Optional[float] = Form(None),
     category_id: int = Form(...),
+    activity_id: Optional[int] = Form(None),
     price: float = Form(...),           # Matches "Enter amount*"
     date: str = Form(...),              # Expected: "dd/mm/yyyy"
     time: str = Form(...),              # Expected: "hh:mm"
@@ -643,6 +644,16 @@ async def provider_create_event(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid time format. Use hh:mm or hh:mm AM/PM")
 
+    linked_activity = None
+    if activity_id is not None:
+        linked_activity = db.query(PlatformItem).filter(
+            PlatformItem.id == activity_id,
+            PlatformItem.creator_id == current_user.id,
+            PlatformItem.item_type == "activity"
+        ).first()
+        if linked_activity is None:
+            raise HTTPException(status_code=404, detail="Linked activity not found")
+
     # 3. Create Item
     new_event = PlatformItem(
         item_type="event",
@@ -651,6 +662,7 @@ async def provider_create_event(
         lat=lat,
         lng=lng,
         category_id=category_id,
+        linked_activity_id=linked_activity.id if linked_activity else None,
         price=price,
         date=parsed_date,
         start_time=parsed_time,
@@ -743,7 +755,7 @@ async def provider_create_gift(
         linked_activity = db.query(PlatformItem).filter(
             PlatformItem.id == activity_id,
             PlatformItem.creator_id == current_user.id,
-            PlatformItem.item_type.in_(["activity", "event"])
+            PlatformItem.item_type == "activity"
         ).first()
         if linked_activity is None:
             raise HTTPException(status_code=404, detail="Linked business/activity not found")
