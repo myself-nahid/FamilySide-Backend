@@ -303,6 +303,7 @@ async def get_dashboard_overview(api_request: Request, db: Session = Depends(get
         UpcomingEventListItem(
             id=event.id, 
             name=event.name,
+            activity_id=event.linked_activity_id,
             image_url=get_full_url(api_request, event.image_url) if event.image_url else None,
             date=event.date.strftime("%d %b %Y") if event.date else "N/A",
             time=event.start_time.strftime("%I:%M %p") if event.start_time else "N/A"
@@ -820,6 +821,7 @@ async def view_notification_item_detail(
         id=item.id,
         item_type=item.item_type,
         name=item.name,
+        activity_id=item.linked_activity_id,
         creator_email=item.creator.email if item.creator else "abc@gmail.com",
         category=item.category.name if item.category else "Uncategorized",
         sub_categories=sub_categories,
@@ -1656,6 +1658,7 @@ async def get_events_paginated(
         event_list.append(EventListItem(
             id=event.id,
             name=event.name,
+            activity_id=event.linked_activity_id,
             image_url=get_full_url(api_request, event.image_url) if event.image_url else None,
             created_by=creator_label,
             category=event.category.name if event.category else "Uncategorized",
@@ -1698,6 +1701,7 @@ async def get_all_events(
         event_list.append(EventListItem(
             id=event.id,
             name=event.name,
+            activity_id=event.linked_activity_id,
             image_url=get_full_url(api_request, event.image_url) if event.image_url else None,
             created_by=creator_label,
             category=event.category.name if event.category else "Uncategorized",
@@ -1738,6 +1742,7 @@ async def get_event_detail(
     detail = EventDetailResponse(
         id=event.id,
         name=event.name,
+        activity_id=event.linked_activity_id,
         image_url=get_full_url(api_request, event.image_url) if event.image_url else None,
         description=event.description,
         website=event.website,
@@ -1885,6 +1890,7 @@ async def update_event(
     name: str = Form(...),
     location: str = Form(...),
     category_id: int = Form(...),
+    activity_id: Optional[int] = Form(None),
     price: float = Form(0.0),
     description: str = Form(...),
     website: Optional[str] = Form(None),
@@ -1921,6 +1927,15 @@ async def update_event(
     parsed_sub = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
 
+    linked_activity = None
+    if activity_id is not None:
+        linked_activity = db.query(PlatformItem).filter(
+            PlatformItem.id == activity_id,
+            PlatformItem.item_type == "activity"
+        ).first()
+        if linked_activity is None:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
     parsed_date = None
     parsed_start = None
     parsed_end = None
@@ -1952,6 +1967,7 @@ async def update_event(
     event.name = name
     event.location = location
     event.category_id = category_id
+    event.linked_activity_id = linked_activity.id if linked_activity else None
     event.price = price
     event.description = description
     event.website = website
@@ -2027,6 +2043,7 @@ async def get_gifts_paginated(
         gift_list.append(GiftListItem(
             id=gift.id,
             name=gift.name,
+            activity_id=gift.linked_activity_id,
             image_url=get_full_url(api_request, gift.image_url) if gift.image_url else None,
             created_by=creator_label,
             category=gift.category.name if gift.category else "Uncategorized",
@@ -2070,6 +2087,7 @@ async def get_all_gifts(
         gift_list.append(GiftListItem(
             id=gift.id,
             name=gift.name,
+            activity_id=gift.linked_activity_id,
             image_url=get_full_url(api_request, gift.image_url) if gift.image_url else None,
             created_by=creator_label,
             category=gift.category.name if gift.category else "Uncategorized",
@@ -2112,6 +2130,7 @@ async def get_gift_detail(
     detail = GiftDetailResponse(
         id=gift.id,
         name=gift.name,
+        activity_id=gift.linked_activity_id,
         image_url=get_full_url(api_request, gift.image_url) if gift.image_url else None,
         description=gift.description,
         website=gift.website or "www.familyside.com",
@@ -2234,6 +2253,7 @@ async def update_gift(
     name: str = Form(...),
     location: str = Form(...),
     category_id: int = Form(...),
+    activity_id: Optional[int] = Form(None),
     price: float = Form(0.0),
     description: str = Form(...),
     website: Optional[str] = Form(None),
@@ -2271,6 +2291,15 @@ async def update_gift(
     parsed_sub = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
 
+    linked_activity = None
+    if activity_id is not None:
+        linked_activity = db.query(PlatformItem).filter(
+            PlatformItem.id == activity_id,
+            PlatformItem.item_type == "activity"
+        ).first()
+        if linked_activity is None:
+            raise HTTPException(status_code=404, detail="Activity not found")
+
     parsed_date = None
     if date:
         try:
@@ -2284,6 +2313,7 @@ async def update_gift(
     gift.name = name
     gift.location = location
     gift.category_id = category_id
+    gift.linked_activity_id = linked_activity.id if linked_activity else None
     gift.price = price
     gift.description = description
     gift.website = website

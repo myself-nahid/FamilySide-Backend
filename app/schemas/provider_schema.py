@@ -11,6 +11,7 @@ class ProviderHomeHeader(BaseModel):
 class ProviderItemCard(BaseModel):
     id: int
     name: str
+    activity_id: Optional[int] = None
     image_url: Optional[str]
     category_label: str # e.g., "Birthday"
     item_type: str     # activity, event
@@ -50,6 +51,7 @@ class ProviderProfileResponse(BaseModel):
 class ManagedEventItem(BaseModel):
     id: int
     name: str
+    activity_id: Optional[int] = None
     item_type: str
     location: str
     date: str
@@ -64,6 +66,7 @@ class ProviderItemDetailResponse(BaseModel):
     id: int
     item_type: str
     name: str
+    activity_id: Optional[int] = None
     location: Optional[str]
     category_id: Optional[int]
     price: float

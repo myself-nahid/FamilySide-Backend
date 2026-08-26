@@ -63,6 +63,7 @@ class PendingApprovalListItem(BaseModel):
 class UpcomingEventListItem(BaseModel):
     id: int
     name: str
+    activity_id: Optional[int] = None
     image_url: Optional[str]
     date: str
     time: str
@@ -139,6 +140,7 @@ class ItemReviewDetailResponse(BaseModel):
     id: int
     item_type: str
     name: str
+    activity_id: Optional[int] = None
     creator_email: Optional[str] = "abc@gmail.com"
     category: str
     category_id: Optional[int] = None
@@ -212,6 +214,7 @@ class BulkDeleteRequest(BaseModel):
 class EventListItem(BaseModel):
     id: int
     name: str
+    activity_id: Optional[int] = None
     image_url: Optional[str]
     created_by: str   
     category: str
@@ -221,6 +224,7 @@ class EventListItem(BaseModel):
 class EventDetailResponse(BaseModel):
     id: int
     name: str
+    activity_id: Optional[int] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
     website: Optional[str] = None
@@ -244,6 +248,7 @@ class EventDetailResponse(BaseModel):
 class GiftListItem(BaseModel):
     id: int
     name: str
+    activity_id: Optional[int] = None
     image_url: Optional[str]
     created_by: str   
     category: str
@@ -253,6 +258,7 @@ class GiftListItem(BaseModel):
 class GiftDetailResponse(BaseModel):
     id: int
     name: str
+    activity_id: Optional[int] = None
     image_url: Optional[str] = None
     description: Optional[str] = None
     website: Optional[str] = None

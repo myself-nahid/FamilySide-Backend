@@ -216,6 +216,7 @@ async def get_provider_home_feed(
         return ProviderItemCard(
             id=item.id,
             name=item.name,
+            activity_id=item.linked_activity_id,
             image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
             category_label=item.category.name if item.category else "Birthday",
             item_type=item.item_type,
@@ -258,6 +259,7 @@ async def get_my_managed_items(
         formatted_items.append(ProviderItemCard(
             id=i.id,
             name=i.name,
+            activity_id=i.linked_activity_id,
             image_url=get_full_url(api_request, i.image_url) if i.image_url else None,
             category_label=i.category.name if i.category else "General",
             item_type=i.item_type,
@@ -301,6 +303,7 @@ async def get_provider_item_for_edit(
         id=item.id,
         item_type=item.item_type,
         name=item.name,
+        activity_id=item.linked_activity_id,
         location=item.location,
         category_id=item.category_id,
         price=item.price or 0.0,
@@ -342,6 +345,7 @@ async def view_item_details(
         id=item.id,
         item_type=item.item_type,
         name=item.name,
+        activity_id=item.linked_activity_id,
         location=item.location,
         category_id=item.category_id,
         price=item.price or 0.0,
@@ -370,6 +374,7 @@ async def update_provider_item(
     price: float = Form(...),         
     description: str = Form(...),     # Added description (required)
     location: Optional[str] = Form(None),
+    activity_id: Optional[int] = Form(None),
     
     # Optional fields for all types
     date: Optional[str] = Form(None),       # Added Date
@@ -392,6 +397,18 @@ async def update_provider_item(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found or unauthorized")
 
+    linked_activity = None
+    if activity_id is not None:
+        linked_activity = db.query(PlatformItem).filter(
+            PlatformItem.id == activity_id,
+            PlatformItem.creator_id == current_user.id,
+            PlatformItem.item_type == "activity"
+        ).first()
+        if linked_activity is None:
+            raise HTTPException(status_code=404, detail="Linked activity not found")
+    if item.item_type == "activity" and activity_id is not None:
+        raise HTTPException(status_code=400, detail="Activities cannot be linked to another activity")
+
     # 2. Handle New Photo Upload (if provided)
     if photo and photo.filename:
         UPLOAD_DIR = f"uploads/{item.item_type}s"
@@ -406,6 +423,7 @@ async def update_provider_item(
     item.name = name
     item.price = price
     item.description = description
+    item.linked_activity_id = linked_activity.id if linked_activity else None
     if location: item.location = location
     if opening_days: item.opening_days = opening_days
     if opening_hours: item.opening_hours = opening_hours
@@ -601,6 +619,21 @@ async def get_active_sub_categories_for_dropdown(
     
     data = [ProviderDropdownItem(id=s.id, name=s.name) for s in sub_categories]
     return APIResponse(status="success", message="Sub-categories loaded", data=data)
+
+@router.get("/activities/active", response_model=APIResponse[List[ProviderDropdownItem]])
+async def get_provider_activities_for_dropdown(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Returns the provider's activities for event and gift association forms."""
+    activities = db.query(PlatformItem).filter(
+        PlatformItem.creator_id == current_user.id,
+        PlatformItem.item_type == "activity",
+        PlatformItem.status.in_(["approved", "pending"])
+    ).order_by(PlatformItem.name.asc()).all()
+
+    data = [ProviderDropdownItem(id=activity.id, name=activity.name) for activity in activities]
+    return APIResponse(status="success", message="Activities loaded", data=data)
 
 # 2. CREATE EVENT
 @router.post("/create/event", response_model=APIResponse[None])
@@ -899,7 +932,7 @@ async def get_provider_events_by_status(
 
     for e in events:
         item = ManagedEventItem(
-            id=e.id, name=e.name, item_type="Event",
+            id=e.id, name=e.name, activity_id=e.linked_activity_id, item_type="Event",
             location=e.location or "Dhaka, Bangladesh",
             date=e.date.strftime("%d %B %Y") if e.date else "N/A",
             time=e.start_time.strftime("%I:%M %p") if e.start_time else "N/A",
