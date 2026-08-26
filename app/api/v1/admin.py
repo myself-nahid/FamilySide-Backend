@@ -954,13 +954,18 @@ async def admin_ai_parse_activity_flyer(
 @router.get("/activities/all", response_model=APIResponse[List[ActivityListItem]])
 async def get_all_activities(
     api_request: Request,
+    search: Optional[str] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     """
     Returns a list of all activities without pagination, for quick access or dropdowns.
     """
-    activities = db.query(PlatformItem).filter(PlatformItem.item_type == "activity").order_by(PlatformItem.created_at.desc()).all()
+    query = db.query(PlatformItem).filter(PlatformItem.item_type == "activity")
+    if search:
+        query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
+
+    activities = query.order_by(PlatformItem.created_at.desc()).all()
     
     activity_list = []
     for activity in activities:
