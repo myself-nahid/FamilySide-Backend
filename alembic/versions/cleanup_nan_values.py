@@ -30,7 +30,7 @@ def upgrade() -> None:
         """
         UPDATE platform_items
         SET price = 0
-        WHERE price IS NOT NULL AND isnan(price);
+        WHERE price IS NOT NULL AND price = 'NaN'::float8;
         """
     )
 

@@ -12,7 +12,7 @@ WHERE description IS NOT NULL AND lower(trim(description)) = 'nan';
 -- 2) Replace numeric NaN in numeric columns with a safe default (price -> 0)
 UPDATE platform_items
 SET price = 0
-WHERE price IS NOT NULL AND isnan(price);
+WHERE price IS NOT NULL AND price = 'NaN'::float8;
 
 -- 3) Optional: normalize empty strings to NULL for contact fields
 -- UPDATE platform_items SET website = NULL WHERE website IS NOT NULL AND trim(website) = '';

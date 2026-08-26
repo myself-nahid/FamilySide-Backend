@@ -77,7 +77,7 @@ docker-compose up -d
 3. Ensure the `DATABASE_URL` env var points to your DB and run Alembic migrations:
 
 ```bash
-alembic upgrade head
+alembic upgrade heads
 ```
 
 4. Start the FastAPI server:
@@ -101,7 +101,7 @@ The included `docker-compose.yml` only provisions the Postgres DB. Use the local
 
 ```bash
 alembic revision --autogenerate -m "describe change"
-alembic upgrade head
+alembic upgrade heads
 ```
 
 ## Contributing
