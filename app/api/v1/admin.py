@@ -2304,6 +2304,7 @@ async def create_gift_card_design(
 ):
     form = await request.form()
     upload_file = form.get("image") or form.get("image_file") or image_file
+    occasion = (form.get("occasion") or form.get("occasion_name") or "").strip() or None
     if not upload_file:
         raise HTTPException(status_code=400, detail="Card design image is required")
 
@@ -2324,6 +2325,7 @@ async def create_gift_card_design(
     design = GiftCardDesign(
         image_url=saved_image_path,
         is_active=True,
+        occasion=occasion,
         creator_id=admin.id
     )
     db.add(design)
@@ -2335,11 +2337,14 @@ async def get_gift_card_designs(
     page: int = 1,
     limit: int = 20,
     search: Optional[str] = None,
+    occasion: Optional[str] = None,
     api_request: Request = None,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     query = db.query(GiftCardDesign)
+    if occasion:
+        query = query.filter(GiftCardDesign.occasion == occasion)
     total_count = query.count()
     designs = query.order_by(GiftCardDesign.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
 
@@ -2347,6 +2352,7 @@ async def get_gift_card_designs(
         id=d.id,
         image_url=get_full_url(api_request, d.image_url),
         is_active=d.is_active,
+        occasion=d.occasion,
         created_at=d.created_at
     ) for d in designs]
 
@@ -2370,6 +2376,7 @@ async def get_gift_card_design_detail(
             id=design.id,
             image_url=get_full_url(api_request, design.image_url),
             is_active=design.is_active,
+            occasion=design.occasion,
             creator_id=design.creator_id,
             created_at=design.created_at
         )

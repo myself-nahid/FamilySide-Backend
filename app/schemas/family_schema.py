@@ -87,6 +87,7 @@ class ItemDetailFullResponse(BaseModel):
     description: str
     image_url: Optional[str]
     category_name: str
+    business_name: Optional[str] = None
     lat: float
     lng: float
     address: str
@@ -241,6 +242,7 @@ class GiftCardDesignItem(BaseModel):
     id: int
     image_url: str
     is_active: bool
+    occasion: Optional[str] = None
     created_at: Optional[str] = None
 
 class GiftCardDesignListResponse(BaseModel):
@@ -253,6 +255,7 @@ class GiftCardDesignDetailResponse(BaseModel):
     id: int
     image_url: str
     is_active: bool
+    occasion: Optional[str] = None
     creator_id: Optional[int] = None
     created_at: Optional[str] = None
 

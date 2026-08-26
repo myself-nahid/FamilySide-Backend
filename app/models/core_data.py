@@ -51,6 +51,7 @@ class PlatformItem(Base):
     # Relationships
     creator_id = Column(Integer, ForeignKey("users.id"))
     category_id = Column(Integer, ForeignKey("categories.id"))
+    linked_activity_id = Column(Integer, ForeignKey("platform_items.id", ondelete="SET NULL"), nullable=True)
     
     # Details
     location = Column(String, nullable=True)
@@ -80,6 +81,7 @@ class PlatformItem(Base):
 
     creator = relationship("User", backref="created_items")
     category = relationship("Category")
+    linked_activity = relationship("PlatformItem", remote_side="PlatformItem.id", foreign_keys=[linked_activity_id])
 
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
@@ -89,6 +91,7 @@ class GiftCardDesign(Base):
     id = Column(Integer, primary_key=True, index=True)
     image_url = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
+    occasion = Column(String, nullable=True)
     creator_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 

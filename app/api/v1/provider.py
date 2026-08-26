@@ -713,6 +713,7 @@ async def provider_create_gift(
     price: float = Form(...),                 # UI Label: Enter amount*
     description: str = Form(...),             # UI Label: Description
     tags: str = Form("[]"),                   # UI Label: Tag (multi-select)
+    activity_id: Optional[int] = Form(None),  # Optional business/activity this gift belongs to
     photo: Optional[UploadFile] = File(None), # UI Label: Add Photos
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -725,16 +726,27 @@ async def provider_create_gift(
     image_url = None
     if photo:
         os.makedirs("uploads/gifts", exist_ok=True)
-        path = f"uploads/gifts/prov_{current_user.id}_{photo.filename}"
+        ext = os.path.splitext(photo.filename)[1] if photo.filename else ".png"
+        path = f"uploads/gifts/prov_{current_user.id}_{datetime.utcnow().timestamp()}{ext}"
         with open(path, "wb") as buffer:
             shutil.copyfileobj(photo.file, buffer)
-        image_url = f"/{path}"
+        image_url = f"/{path.replace('\\', '/')}"
 
     # 2. Parse Tags JSON
     try:
-        parsed_tags = json.loads(tags)
-    except:
+        parsed_tags = json.loads(tags) if tags else []
+    except Exception:
         parsed_tags = [tags] if tags else []
+
+    linked_activity = None
+    if activity_id is not None:
+        linked_activity = db.query(PlatformItem).filter(
+            PlatformItem.id == activity_id,
+            PlatformItem.creator_id == current_user.id,
+            PlatformItem.item_type.in_(["activity", "event"])
+        ).first()
+        if linked_activity is None:
+            raise HTTPException(status_code=404, detail="Linked business/activity not found")
 
     # 3. Create the Gift Item
     new_gift = PlatformItem(
@@ -746,6 +758,7 @@ async def provider_create_gift(
         tags=parsed_tags,
         image_url=image_url,
         creator_id=current_user.id,
+        linked_activity_id=linked_activity.id if linked_activity else None,
         status="pending" # Sent to admin for approval
     )
     

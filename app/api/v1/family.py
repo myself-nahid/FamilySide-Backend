@@ -35,6 +35,18 @@ import time
 # Router for family-facing endpoints
 router = APIRouter(prefix="/family", tags=["Family"])
 
+DEFAULT_OCCASIONS = [
+    {"id": 1, "key": "birthday", "label": "Birthday"},
+    {"id": 2, "key": "new-baby", "label": "New Baby"},
+    {"id": 3, "key": "baptism", "label": "Baptism"},
+    {"id": 4, "key": "baby-shower", "label": "Baby Shower"},
+    {"id": 5, "key": "christmas", "label": "Christmas"},
+    {"id": 6, "key": "mothers-day", "label": "Mother's Day"},
+    {"id": 7, "key": "fathers-day", "label": "Father's Day"},
+    {"id": 8, "key": "just-for-you", "label": "Just for You"},
+    {"id": 9, "key": "other", "label": "Other"},
+]
+
 AGE_BRACKET_ALIASES = {
     "0-2": {"0-2", "0-2 anni", "0-2 years", "0-2 yrs", "0-2 years old", "0-3", "0-3 years", "0-3 yrs"},
     "3-5": {"3-5", "3-5 anni", "3-5 years", "3-5 yrs", "3-5 years old", "3-6", "3-6 years", "3-6 yrs"},
@@ -117,60 +129,31 @@ def item_matches_age_filter(item, requested_ages):
 from app.services.email_service import send_support_alert_to_admin
 @router.get("/occasions", response_model=APIResponse)
 async def get_occasions(api_request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Return a curated list of occasions (pill buttons) for the UI"""
-    # Return only occasions that the user has already added as Gift Lists (deduplicated)
-    lists = db.query(UserGiftList).filter(UserGiftList.user_id == current_user.id).all()
+    """Return the fixed occasion list required by the product specification."""
+    items = [{
+        "id": item["id"],
+        "key": item["key"],
+        "label": item["label"],
+        "image_url": None,
+    } for item in DEFAULT_OCCASIONS]
 
-    seen = {}
-    # Prefer lists that have an image_url or the most recently updated one
-    for l in lists:
-        occ = (l.occasion or l.name or "general").strip()
-        if not occ:
-            continue
-        key = occ.lower().replace(" ", "_")
-
-        candidate = {
-            "id": l.id,
-            "key": key,
-            "label": occ if occ else l.name,
-            "image_url": get_full_url(api_request, l.image_url) if getattr(l, 'image_url', None) else None,
-            "updated_at": getattr(l, 'updated_at', None)
-        }
-
-        if key not in seen:
-            seen[key] = candidate
-            continue
-
-        # If existing candidate has no image but current has one, prefer current
-        existing = seen[key]
-        if not existing.get("image_url") and candidate.get("image_url"):
-            seen[key] = candidate
-            continue
-
-        # Otherwise prefer the one with later updated_at if available
-        try:
-            if existing.get("updated_at") and candidate.get("updated_at"):
-                if candidate["updated_at"] > existing["updated_at"]:
-                    seen[key] = candidate
-        except Exception:
-            pass
-
-    # Strip helper keys before returning
-    items = [ {k:v for k,v in v.items() if k in ("id","key","label","image_url")} for v in seen.values() ]
     return APIResponse(status="success", message="Occasions fetched", data={"items": items})
 
 @router.get("/gift-card-designs", response_model=APIResponse)
 async def list_gift_card_designs(
-    api_request: Request, 
-    page: int = 1, 
-    limit: int = 20, 
-    db: Session = Depends(get_db), 
+    api_request: Request,
+    occasion: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List active gift card designs uploaded by admins"""
+    """List active gift card designs uploaded by admins, optionally filtered by occasion."""
     from app.models.core_data import GiftCardDesign
 
     q = db.query(GiftCardDesign).filter(GiftCardDesign.is_active == True)
+    if occasion:
+        q = q.filter(GiftCardDesign.occasion == occasion)
     total = q.count()
     designs = q.order_by(GiftCardDesign.created_at.desc()).offset((page-1)*limit).limit(limit).all()
 
@@ -178,9 +161,10 @@ async def list_gift_card_designs(
     for d in designs:
         items.append({
             "id": d.id,
-            "image_url": get_full_url(api_request, d.image_url) if d.image_url else None, 
+            "image_url": get_full_url(api_request, d.image_url) if d.image_url else None,
             "is_active": d.is_active,
-            "created_at": d.created_at.isoformat() if d.created_at else None
+            "occasion": d.occasion,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
         })
 
     return APIResponse(status="success", message="Gift card designs fetched", data={"total": total, "page": page, "limit": limit, "items": items})
@@ -202,9 +186,9 @@ async def get_gift_card_design(
 
     data = {
         "id": d.id,
-        # --- 4. PASS 'api_request' INSTEAD OF 'None' ---
         "image_url": get_full_url(api_request, d.image_url) if d.image_url else None,
         "is_active": d.is_active,
+        "occasion": getattr(d, 'occasion', None),
         "creator_id": getattr(d, 'creator_id', None),
         "created_at": d.created_at.isoformat() if d.created_at else None
     }
@@ -837,7 +821,6 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    # Every time this API is called, we log an 'item_view' for the provider
     if item.creator_id:
         log_analytics(
             db,
@@ -846,22 +829,51 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
             item_id=item.id
         )
 
-    # Fetch nested lists for the detail page
-    events = db.query(PlatformItem).filter(
+    business_item = None
+    if item.item_type == "gift" and item.linked_activity_id:
+        business_item = db.query(PlatformItem).filter(PlatformItem.id == item.linked_activity_id).first()
+    elif item.item_type == "activity":
+        business_item = item
+    elif item.item_type == "event":
+        business_item = db.query(PlatformItem).filter(
+            PlatformItem.id == item.linked_activity_id
+        ).first() if item.linked_activity_id else db.query(PlatformItem).filter(
+            PlatformItem.creator_id == item.creator_id,
+            PlatformItem.item_type == "activity",
+            PlatformItem.status == "approved"
+        ).order_by(PlatformItem.created_at.desc()).first()
+
+    related_query = db.query(PlatformItem).filter(
         PlatformItem.item_type == "event",
-        PlatformItem.category_id == item.category_id,
         PlatformItem.id != item.id,
         PlatformItem.status == "approved"
-    ).limit(3).all()
+    )
+    if business_item is not None:
+        related_query = related_query.filter(
+            or_(
+                PlatformItem.creator_id == business_item.creator_id,
+                PlatformItem.linked_activity_id == business_item.id
+            )
+        )
+    else:
+        related_query = related_query.filter(PlatformItem.category_id == item.category_id)
+    events = related_query.limit(3).all()
 
-    gifts = db.query(PlatformItem).filter(
+    gifts_query = db.query(PlatformItem).filter(
         PlatformItem.item_type == "gift",
         PlatformItem.status == "approved"
-    ).limit(3).all()
+    )
+    if business_item is not None:
+        gifts_query = gifts_query.filter(
+            or_(
+                PlatformItem.creator_id == business_item.creator_id,
+                PlatformItem.linked_activity_id == business_item.id
+            )
+        )
+    gifts = gifts_query.filter(PlatformItem.id != item.id).limit(3).all()
 
     reviews = db.query(Review).filter(Review.item_id == item_id).order_by(Review.created_at.desc()).limit(5).all()
 
-    # Map events and gifts into HomeItemCard-like responses
     def map_to_card(src_item):
         return HomeItemCard(
             id=src_item.id,
@@ -880,8 +892,6 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
     related_events = [map_to_card(e) for e in events]
     gift_ideas = [map_to_card(g) for g in gifts]
 
-    # Formatted Response
-    # If coordinates are missing, attempt a best-effort geocode and persist
     if (not item.lat or not item.lng) and item.location and settings.GOOGLE_MAPS_API_KEY:
         try:
             gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
@@ -899,12 +909,19 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
         except Exception:
             pass
 
+    business_name = None
+    if business_item is not None:
+        business_name = business_item.name
+    elif item.creator and getattr(item.creator, "full_name", None):
+        business_name = item.creator.full_name
+
     data = ItemDetailFullResponse(
         id=item.id,
         name=item.name,
         description=item.description or "",
         image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
         category_name=item.category.name if item.category else "Playground",
+        business_name=business_name,
         lat=item.lat or 0.0,
         lng=item.lng or 0.0,
         address=item.location or "N/A",

@@ -280,12 +280,14 @@ class GiftCardDesignItem(BaseModel):
     id: int
     image_url: str
     is_active: bool
+    occasion: Optional[str] = None
     created_at: datetime.datetime
 
 class GiftCardDesignDetailResponse(BaseModel):
     id: int
     image_url: str
     is_active: bool
+    occasion: Optional[str] = None
     creator_id: Optional[int] = None
     created_at: datetime.datetime
 
