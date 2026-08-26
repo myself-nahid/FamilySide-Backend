@@ -1632,11 +1632,15 @@ async def get_events_paginated(
     page: int = 1,
     limit: int = 10,
     search: Optional[str] = None,
+    activity_id: Optional[int] = None,
     creator_type: Optional[str] = "all", # Filter by "Admin", "User", "Provider"
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     query = db.query(PlatformItem).filter(PlatformItem.item_type == "event")
+
+    if activity_id is not None:
+        query = query.filter(PlatformItem.linked_activity_id == activity_id)
     
     if search:
         query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
@@ -1686,13 +1690,17 @@ async def admin_ai_parse_event_flyer(
 @router.get("/events/all", response_model=APIResponse[List[EventListItem]])
 async def get_all_events(
     api_request: Request,
+    activity_id: Optional[int] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     """
     Returns a list of all events without pagination.
     """
-    events = db.query(PlatformItem).filter(PlatformItem.item_type == "event").order_by(PlatformItem.created_at.desc()).all()
+    events_query = db.query(PlatformItem).filter(PlatformItem.item_type == "event")
+    if activity_id is not None:
+        events_query = events_query.filter(PlatformItem.linked_activity_id == activity_id)
+    events = events_query.order_by(PlatformItem.created_at.desc()).all()
     
     event_list = []
     for event in events:
@@ -2017,11 +2025,15 @@ async def get_gifts_paginated(
     page: int = 1,
     limit: int = 10,
     search: Optional[str] = None,
+    activity_id: Optional[int] = None,
     creator_type: Optional[str] = "all", # Filter by "Admin", "User", "Provider"
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     query = db.query(PlatformItem).filter(PlatformItem.item_type == "gift")
+
+    if activity_id is not None:
+        query = query.filter(PlatformItem.linked_activity_id == activity_id)
     
     if search:
         query = query.filter(PlatformItem.name.ilike(f"%{search}%"))
@@ -2072,13 +2084,17 @@ async def admin_ai_parse_gift_flyer(
 @router.get("/gifts/all", response_model=APIResponse[List[GiftListItem]])
 async def get_all_gifts(
     api_request: Request,
+    activity_id: Optional[int] = None,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
     """
     Returns a list of all gifts without pagination.
     """
-    gifts = db.query(PlatformItem).filter(PlatformItem.item_type == "gift").order_by(PlatformItem.created_at.desc()).all()
+    gifts_query = db.query(PlatformItem).filter(PlatformItem.item_type == "gift")
+    if activity_id is not None:
+        gifts_query = gifts_query.filter(PlatformItem.linked_activity_id == activity_id)
+    gifts = gifts_query.order_by(PlatformItem.created_at.desc()).all()
     
     gift_list = []
     for gift in gifts:

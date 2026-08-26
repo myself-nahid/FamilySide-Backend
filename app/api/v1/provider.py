@@ -240,6 +240,7 @@ async def get_provider_home_feed(
 async def get_my_managed_items(
     api_request: Request,
     item_type: str = "activity", # activity, event, gift
+    activity_id: Optional[int] = None,
     page: int = 1,
     limit: int = 10,
     db: Session = Depends(get_db),
@@ -250,6 +251,9 @@ async def get_my_managed_items(
         PlatformItem.creator_id == current_user.id,
         PlatformItem.item_type == item_type
     )
+
+    if activity_id is not None:
+        query = query.filter(PlatformItem.linked_activity_id == activity_id)
     
     total_count = query.count()
     items = query.order_by(PlatformItem.created_at.desc()).offset((page-1)*limit).limit(limit).all()
