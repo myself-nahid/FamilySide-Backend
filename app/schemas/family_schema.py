@@ -87,6 +87,7 @@ class ItemDetailFullResponse(BaseModel):
     description: str
     image_url: Optional[str]
     category_name: str
+    price: float
     business_name: Optional[str] = None
     lat: float
     lng: float
@@ -95,9 +96,9 @@ class ItemDetailFullResponse(BaseModel):
     website: Optional[str]
     instagram: Optional[str]
     whatsapp: Optional[str]
+    activity_id: Optional[int] = None
     
     # Nested components seen in Image 3
-    related_events: List[HomeItemCard]
     gift_ideas: List[HomeItemCard]
     reviews: List[ReviewResponse]
     average_rating_label: str # e.g. "Recommended"

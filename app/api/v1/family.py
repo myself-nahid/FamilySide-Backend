@@ -831,7 +831,11 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
 
     business_item = None
     if item.item_type == "gift" and item.linked_activity_id:
-        business_item = db.query(PlatformItem).filter(PlatformItem.id == item.linked_activity_id).first()
+        business_item = db.query(PlatformItem).filter(
+            PlatformItem.id == item.linked_activity_id,
+            PlatformItem.item_type == "activity",
+            PlatformItem.status == "approved"
+        ).first()
     elif item.item_type == "activity":
         business_item = item
     elif item.item_type == "event":
@@ -843,32 +847,13 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
             PlatformItem.status == "approved"
         ).order_by(PlatformItem.created_at.desc()).first()
 
-    related_query = db.query(PlatformItem).filter(
-        PlatformItem.item_type == "event",
-        PlatformItem.id != item.id,
-        PlatformItem.status == "approved"
-    )
-    if business_item is not None:
-        related_query = related_query.filter(
-            or_(
-                PlatformItem.creator_id == business_item.creator_id,
-                PlatformItem.linked_activity_id == business_item.id
-            )
-        )
-    else:
-        related_query = related_query.filter(PlatformItem.category_id == item.category_id)
-    events = related_query.limit(3).all()
-
     gifts_query = db.query(PlatformItem).filter(
         PlatformItem.item_type == "gift",
         PlatformItem.status == "approved"
     )
     if business_item is not None:
         gifts_query = gifts_query.filter(
-            or_(
-                PlatformItem.creator_id == business_item.creator_id,
-                PlatformItem.linked_activity_id == business_item.id
-            )
+            PlatformItem.linked_activity_id == business_item.id
         )
     gifts = gifts_query.filter(PlatformItem.id != item.id).limit(3).all()
 
@@ -889,7 +874,6 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
             is_saved=False
         )
 
-    related_events = [map_to_card(e) for e in events]
     gift_ideas = [map_to_card(g) for g in gifts]
 
     if (not item.lat or not item.lng) and item.location and settings.GOOGLE_MAPS_API_KEY:
@@ -921,6 +905,7 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
         description=item.description or "",
         image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
         category_name=item.category.name if item.category else "Playground",
+        price=item.price or 0.0,
         business_name=business_name,
         lat=item.lat or 0.0,
         lng=item.lng or 0.0,
@@ -929,7 +914,7 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
         website=item.website,
         instagram=item.instagram,
         whatsapp=item.whatsapp,
-        related_events=related_events,
+        activity_id=item.linked_activity_id,
         gift_ideas=gift_ideas,
         reviews=[
             ReviewResponse(
