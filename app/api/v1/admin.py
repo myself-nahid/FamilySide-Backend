@@ -831,6 +831,7 @@ async def view_notification_item_detail(
         website=item.website,
         instagram_link=item.instagram,
         whatsapp_number=item.whatsapp,
+        includes=item.includes or [],
         date=item.date.strftime("%d/%m/%Y") if item.date else None,
         time=item.start_time.strftime("%I:%M %p") if item.start_time else None
     )
@@ -2060,7 +2061,8 @@ async def get_gifts_paginated(
             created_by=creator_label,
             category=gift.category.name if gift.category else "Uncategorized",
             location=gift.location or "N/A",
-            fee=gift.price or 0.0
+            fee=gift.price or 0.0,
+            includes=gift.includes or []
         ))
         
     return APIResponse(
@@ -2108,7 +2110,8 @@ async def get_all_gifts(
             created_by=creator_label,
             category=gift.category.name if gift.category else "Uncategorized",
             location=gift.location or "N/A",
-            fee=gift.price or 0.0
+            fee=gift.price or 0.0,
+            includes=gift.includes or []
         ))
         
     return APIResponse(status="success", message="All gifts fetched", data=gift_list)
@@ -2140,9 +2143,6 @@ async def get_gift_detail(
     parsed_sub_categories = gift.sub_categories if isinstance(gift.sub_categories, list) else []
     parsed_tags = gift.tags if isinstance(gift.tags, list) else []
     
-    # Mock data to support the specific "Includes" section in Image 3
-    mock_includes = ["1 class", "Materials for the message", "Duration: 2 Hours"]
-
     detail = GiftDetailResponse(
         id=gift.id,
         name=gift.name,
@@ -2164,7 +2164,7 @@ async def get_gift_detail(
         date=gift.date.strftime("%d %b %Y") if gift.date else "N/A",
         price=gift.price or 0.0,
         time=time_str,
-        includes=mock_includes
+        includes=gift.includes or []
     )
     
     return APIResponse(status="success", message="Gift details fetched", data=detail)
@@ -2180,6 +2180,7 @@ async def create_gift(
     activity_id: Optional[int] = Form(None),
     price: float = Form(0.0),
     description: str = Form(...),
+    includes: Optional[str] = Form(None),
     
     website: Optional[str] = Form(None), # Website isn't in form UI but modal needs it
     whatsapp: Optional[str] = Form(None),
@@ -2214,6 +2215,9 @@ async def create_gift(
     # 2. Parse JSON lists (Sub-categories and Tags)
     parsed_sub = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
+    parsed_includes = json.loads(includes) if includes else []
+    if not isinstance(parsed_includes, list) or not all(isinstance(value, str) for value in parsed_includes):
+        raise HTTPException(status_code=400, detail="includes must be a JSON array of strings")
 
     linked_activity = None
     if activity_id is not None:
@@ -2241,6 +2245,7 @@ async def create_gift(
         linked_activity_id=linked_activity.id if linked_activity else None,
         price=price,
         description=description,
+        includes=parsed_includes,
         website=website,
         whatsapp=whatsapp,
         email=email,
@@ -2272,6 +2277,7 @@ async def update_gift(
     activity_id: Optional[int] = Form(None),
     price: float = Form(0.0),
     description: str = Form(...),
+    includes: Optional[str] = Form(None),
     website: Optional[str] = Form(None),
     whatsapp: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
@@ -2306,6 +2312,9 @@ async def update_gift(
 
     parsed_sub = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
+    parsed_includes = json.loads(includes) if includes else []
+    if not isinstance(parsed_includes, list) or not all(isinstance(value, str) for value in parsed_includes):
+        raise HTTPException(status_code=400, detail="includes must be a JSON array of strings")
 
     linked_activity = None
     if activity_id is not None:
@@ -2332,6 +2341,7 @@ async def update_gift(
     gift.linked_activity_id = linked_activity.id if linked_activity else None
     gift.price = price
     gift.description = description
+    gift.includes = parsed_includes
     gift.website = website
     gift.whatsapp = whatsapp
     gift.email = email

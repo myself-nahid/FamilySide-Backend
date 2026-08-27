@@ -312,6 +312,7 @@ async def get_provider_item_for_edit(
         category_id=item.category_id,
         price=item.price or 0.0,
         description=item.description,
+        includes=item.includes or [],
         website=item.website,
         whatsapp=item.whatsapp,
         email=item.email,
@@ -354,6 +355,7 @@ async def view_item_details(
         category_id=item.category_id,
         price=item.price or 0.0,
         description=item.description,
+        includes=item.includes or [],
         website=item.website,
         whatsapp=item.whatsapp,
         email=item.email,
@@ -377,6 +379,7 @@ async def update_provider_item(
     name: str = Form(...),            
     price: float = Form(...),         
     description: str = Form(...),     # Added description (required)
+    includes: Optional[str] = Form(None), # JSON array for gifts
     location: Optional[str] = Form(None),
     activity_id: Optional[int] = Form(None),
     
@@ -427,6 +430,11 @@ async def update_provider_item(
     item.name = name
     item.price = price
     item.description = description
+    if item.item_type == "gift" and includes is not None:
+        parsed_includes = json.loads(includes)
+        if not isinstance(parsed_includes, list) or not all(isinstance(value, str) for value in parsed_includes):
+            raise HTTPException(status_code=400, detail="includes must be a JSON array of strings")
+        item.includes = parsed_includes
     item.linked_activity_id = linked_activity.id if linked_activity else None
     if location: item.location = location
     if opening_days: item.opening_days = opening_days
@@ -761,6 +769,7 @@ async def provider_create_gift(
     category_id: int = Form(...),            # UI Label: Category
     price: float = Form(...),                 # UI Label: Enter amount*
     description: str = Form(...),             # UI Label: Description
+    includes: Optional[str] = Form(None),     # JSON array of included benefits
     tags: str = Form("[]"),                   # UI Label: Tag (multi-select)
     activity_id: Optional[int] = Form(None),  # Optional business/activity this gift belongs to
     photo: Optional[UploadFile] = File(None), # UI Label: Add Photos
@@ -787,6 +796,10 @@ async def provider_create_gift(
     except Exception:
         parsed_tags = [tags] if tags else []
 
+    parsed_includes = json.loads(includes) if includes else []
+    if not isinstance(parsed_includes, list) or not all(isinstance(value, str) for value in parsed_includes):
+        raise HTTPException(status_code=400, detail="includes must be a JSON array of strings")
+
     linked_activity = None
     if activity_id is not None:
         linked_activity = db.query(PlatformItem).filter(
@@ -804,6 +817,7 @@ async def provider_create_gift(
         category_id=category_id,
         price=price,
         description=description,
+        includes=parsed_includes,
         tags=parsed_tags,
         image_url=image_url,
         creator_id=current_user.id,

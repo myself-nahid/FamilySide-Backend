@@ -69,6 +69,7 @@ class PlatformItem(Base):
     date = Column(Date, nullable=True)
     start_time = Column(Time, nullable=True)
     end_time = Column(Time, nullable=True)
+    includes = Column(JSONB, nullable=True)
     
     # Taxonomy (JSON)
     sub_categories = Column(JSONB, nullable=True)

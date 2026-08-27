@@ -906,6 +906,7 @@ async def get_item_details(item_id: int, api_request: Request, db: Session = Dep
         image_url=get_full_url(api_request, item.image_url) if item.image_url else None,
         category_name=item.category.name if item.category else "Playground",
         price=item.price or 0.0,
+        includes=item.includes or [],
         business_name=business_name,
         lat=item.lat or 0.0,
         lng=item.lng or 0.0,

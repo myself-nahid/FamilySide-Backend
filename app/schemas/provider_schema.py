@@ -70,6 +70,7 @@ class ProviderItemDetailResponse(BaseModel):
     location: Optional[str]
     category_id: Optional[int]
     price: float
+    includes: List[str] = []
     description: Optional[str]
     
     # Contact Info

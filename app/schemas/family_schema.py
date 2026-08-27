@@ -88,6 +88,7 @@ class ItemDetailFullResponse(BaseModel):
     image_url: Optional[str]
     category_name: str
     price: float
+    includes: List[str] = []
     business_name: Optional[str] = None
     lat: float
     lng: float

@@ -151,6 +151,7 @@ class ItemReviewDetailResponse(BaseModel):
     
     # Specific fields
     price: float
+    includes: List[str] = []
     description: Optional[str] = None
     website: Optional[str] = None
     instagram_link: Optional[str] = None
@@ -254,6 +255,7 @@ class GiftListItem(BaseModel):
     category: str
     location: str
     fee: float
+    includes: List[str] = []
 
 class GiftDetailResponse(BaseModel):
     id: int
@@ -279,7 +281,6 @@ class GiftDetailResponse(BaseModel):
     date: Optional[str] = None
     time: Optional[str] = None
     
-    # Mock 'Includes' array for the UI design in Image 3
     includes: List[str] = []
 
 class GiftCardDesignItem(BaseModel):
