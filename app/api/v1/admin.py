@@ -67,6 +67,27 @@ def parse_list_field(raw):
     return [part.strip() for part in str(parsed).split(",") if part.strip()]
 
 
+def parse_includes_field(raw):
+    if raw is None:
+        return []
+
+    value = str(raw).strip()
+    if not value:
+        return []
+
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        parsed = [part.strip() for part in value.replace("\r\n", "\n").splitlines() if part.strip()]
+        if len(parsed) == 1:
+            parsed = [part.strip() for part in parsed[0].split(",") if part.strip()]
+
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise HTTPException(status_code=400, detail="includes must be a JSON array or text list")
+
+    return [item.strip() for item in parsed if item.strip()]
+
+
 openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Helper function to calculate Trend Metrics (This Week vs Last Week)
@@ -2215,9 +2236,7 @@ async def create_gift(
     # 2. Parse JSON lists (Sub-categories and Tags)
     parsed_sub = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
-    parsed_includes = json.loads(includes) if includes else []
-    if not isinstance(parsed_includes, list) or not all(isinstance(value, str) for value in parsed_includes):
-        raise HTTPException(status_code=400, detail="includes must be a JSON array of strings")
+    parsed_includes = parse_includes_field(includes)
 
     linked_activity = None
     if activity_id is not None:
@@ -2312,9 +2331,7 @@ async def update_gift(
 
     parsed_sub = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
-    parsed_includes = json.loads(includes) if includes else []
-    if not isinstance(parsed_includes, list) or not all(isinstance(value, str) for value in parsed_includes):
-        raise HTTPException(status_code=400, detail="includes must be a JSON array of strings")
+    parsed_includes = parse_includes_field(includes)
 
     linked_activity = None
     if activity_id is not None:

@@ -26,6 +26,27 @@ import googlemaps
 
 openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
+
+def parse_includes_field(raw):
+    if raw is None:
+        return []
+
+    value = str(raw).strip()
+    if not value:
+        return []
+
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        parsed = [part.strip() for part in value.replace("\r\n", "\n").splitlines() if part.strip()]
+        if len(parsed) == 1:
+            parsed = [part.strip() for part in parsed[0].split(",") if part.strip()]
+
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise HTTPException(status_code=400, detail="includes must be a JSON array or text list")
+
+    return [item.strip() for item in parsed if item.strip()]
+
 def _build_ai_flyer_prompt(item_type: str) -> str:
     if item_type == "activity":
         return f"""
@@ -431,9 +452,7 @@ async def update_provider_item(
     item.price = price
     item.description = description
     if item.item_type == "gift" and includes is not None:
-        parsed_includes = json.loads(includes)
-        if not isinstance(parsed_includes, list) or not all(isinstance(value, str) for value in parsed_includes):
-            raise HTTPException(status_code=400, detail="includes must be a JSON array of strings")
+        parsed_includes = parse_includes_field(includes)
         item.includes = parsed_includes
     item.linked_activity_id = linked_activity.id if linked_activity else None
     if location: item.location = location
@@ -796,9 +815,7 @@ async def provider_create_gift(
     except Exception:
         parsed_tags = [tags] if tags else []
 
-    parsed_includes = json.loads(includes) if includes else []
-    if not isinstance(parsed_includes, list) or not all(isinstance(value, str) for value in parsed_includes):
-        raise HTTPException(status_code=400, detail="includes must be a JSON array of strings")
+    parsed_includes = parse_includes_field(includes)
 
     linked_activity = None
     if activity_id is not None:
