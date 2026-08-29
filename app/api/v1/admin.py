@@ -88,6 +88,23 @@ def parse_includes_field(raw):
     return [item.strip() for item in parsed if item.strip()]
 
 
+def parse_optional_float(raw):
+    if raw is None:
+        return None
+
+    if isinstance(raw, (int, float)):
+        return float(raw)
+
+    value = str(raw).strip()
+    if value in ("", "null", "None", "none"):
+        return None
+
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Price must be a valid number or left blank") from exc
+
+
 openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Helper function to calculate Trend Metrics (This Week vs Last Week)
@@ -1065,7 +1082,7 @@ async def create_activity(
     name: str = Form(...),
     location: str = Form(...),
     category_id: int = Form(...),
-    price: float = Form(0.0),
+    price: Optional[str] = Form(None),
     description: str = Form(...),
     
     # Optional text fields
@@ -1107,6 +1124,8 @@ async def create_activity(
         else:
             saved_image_path = str(upload_file).strip() or None
 
+    parsed_price = parse_optional_float(price)
+
     # 2. Parse JSON strings back to Python lists
     parsed_sub_categories = parse_list_field(sub_categories)
     parsed_tags = parse_list_field(tags)
@@ -1143,7 +1162,7 @@ async def create_activity(
         lat=lat_val,
         lng=lng_val,
         category_id=category_id,
-        price=price,
+        price=parsed_price,
         description=description,
         website=website,
         whatsapp=whatsapp,
@@ -1180,7 +1199,7 @@ async def update_activity(
     name: str = Form(...),
     location: str = Form(...),
     category_id: int = Form(...),
-    price: float = Form(0.0),
+    price: Optional[str] = Form(None),
     description: str = Form(...),
     website: Optional[str] = Form(None),
     whatsapp: Optional[str] = Form(None),
@@ -1238,10 +1257,12 @@ async def update_activity(
         except Exception:
             pass
 
+    parsed_price = parse_optional_float(price)
+
     activity.name = name
     activity.location = location
     activity.category_id = category_id
-    activity.price = price
+    activity.price = parsed_price
     activity.description = description
     activity.website = website
     activity.whatsapp = whatsapp
@@ -1802,7 +1823,7 @@ async def create_event(
     location: str = Form(...),
     category_id: int = Form(...),
     activity_id: Optional[int] = Form(None),
-    price: float = Form(0.0),
+    price: Optional[str] = Form(None),
     description: str = Form(...),
     
     website: Optional[str] = Form(None),
@@ -1886,6 +1907,8 @@ async def create_event(
             try: parsed_end = datetime.strptime(end_time, "%H:%M").time()
             except: pass
 
+    parsed_price = parse_optional_float(price)
+
     # 4. Save to Database
     new_event = PlatformItem(
         item_type="event",
@@ -1893,7 +1916,7 @@ async def create_event(
         location=location,
         category_id=category_id,
         linked_activity_id=linked_activity.id if linked_activity else None,
-        price=price,
+        price=parsed_price,
         description=description,
         website=website,
         whatsapp=whatsapp,
@@ -1921,7 +1944,7 @@ async def update_event(
     location: str = Form(...),
     category_id: int = Form(...),
     activity_id: Optional[int] = Form(None),
-    price: float = Form(0.0),
+    price: Optional[str] = Form(None),
     description: str = Form(...),
     website: Optional[str] = Form(None),
     whatsapp: Optional[str] = Form(None),
@@ -1994,11 +2017,13 @@ async def update_event(
             except:
                 parsed_end = None
 
+    parsed_price = parse_optional_float(price)
+
     event.name = name
     event.location = location
     event.category_id = category_id
     event.linked_activity_id = linked_activity.id if linked_activity else None
-    event.price = price
+    event.price = parsed_price
     event.description = description
     event.website = website
     event.whatsapp = whatsapp
@@ -2199,7 +2224,7 @@ async def create_gift(
     location: str = Form(...),
     category_id: int = Form(...),
     activity_id: Optional[int] = Form(None),
-    price: float = Form(0.0),
+    price: Optional[str] = Form(None),
     description: str = Form(...),
     includes: Optional[str] = Form(None),
     
@@ -2255,6 +2280,8 @@ async def create_gift(
             try: parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
             except: pass
 
+    parsed_price = parse_optional_float(price)
+
     # 4. Save to Database
     new_gift = PlatformItem(
         item_type="gift",
@@ -2262,7 +2289,7 @@ async def create_gift(
         location=location,
         category_id=category_id,
         linked_activity_id=linked_activity.id if linked_activity else None,
-        price=price,
+        price=parsed_price,
         description=description,
         includes=parsed_includes,
         website=website,
@@ -2294,7 +2321,7 @@ async def update_gift(
     location: str = Form(...),
     category_id: int = Form(...),
     activity_id: Optional[int] = Form(None),
-    price: float = Form(0.0),
+    price: Optional[str] = Form(None),
     description: str = Form(...),
     includes: Optional[str] = Form(None),
     website: Optional[str] = Form(None),
@@ -2352,11 +2379,13 @@ async def update_gift(
             except:
                 parsed_date = None
 
+    parsed_price = parse_optional_float(price)
+
     gift.name = name
     gift.location = location
     gift.category_id = category_id
     gift.linked_activity_id = linked_activity.id if linked_activity else None
-    gift.price = price
+    gift.price = parsed_price
     gift.description = description
     gift.includes = parsed_includes
     gift.website = website

@@ -47,6 +47,24 @@ def parse_includes_field(raw):
 
     return [item.strip() for item in parsed if item.strip()]
 
+
+def parse_optional_float(raw):
+    if raw is None:
+        return None
+
+    if isinstance(raw, (int, float)):
+        return float(raw)
+
+    value = str(raw).strip()
+    if value in ("", "null", "None", "none"):
+        return None
+
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Price must be a valid number or left blank") from exc
+
+
 def _build_ai_flyer_prompt(item_type: str) -> str:
     if item_type == "activity":
         return f"""
@@ -397,8 +415,8 @@ async def view_item_details(
 @router.put("/manage/items/{item_id}", response_model=APIResponse[None])
 async def update_provider_item(
     item_id: int,
-    name: str = Form(...),            
-    price: float = Form(...),         
+    name: str = Form(...),
+    price: Optional[str] = Form(None),
     description: str = Form(...),     # Added description (required)
     includes: Optional[str] = Form(None), # JSON array for gifts
     location: Optional[str] = Form(None),
@@ -447,9 +465,11 @@ async def update_provider_item(
             shutil.copyfileobj(photo.file, buffer)
         item.image_url = f"/{file_path}".replace("\\", "/")
 
+    parsed_price = parse_optional_float(price)
+
     # 3. Update Text and Numeric Fields
     item.name = name
-    item.price = price
+    item.price = parsed_price
     item.description = description
     if item.item_type == "gift" and includes is not None:
         parsed_includes = parse_includes_field(includes)
@@ -544,7 +564,7 @@ async def provider_create_activity(
     lat: Optional[float] = Form(None), 
     lng: Optional[float] = Form(None),
     category_id: int = Form(...),
-    price: float = Form(...),
+    price: Optional[str] = Form(None),
     description: str = Form(...),
     website: Optional[str] = Form(None),
     whatsapp: Optional[str] = Form(None), # Matches "What's App Number"
@@ -566,6 +586,8 @@ async def provider_create_activity(
         with open(path, "wb") as buffer:
             shutil.copyfileobj(photo.file, buffer)
         image_url = path.replace("\\", "/")
+
+    parsed_price = parse_optional_float(price)
 
     # 2. Map all fields to the Model
     # If lat/lng not provided, attempt geocoding (best-effort)
@@ -590,7 +612,7 @@ async def provider_create_activity(
         lat=lat_val, 
         lng=lng_val,
         category_id=category_id,
-        price=price,
+        price=parsed_price,
         description=description,
         
         # New mapping
@@ -675,7 +697,7 @@ async def provider_create_event(
     lng: Optional[float] = Form(None),
     category_id: int = Form(...),
     activity_id: Optional[int] = Form(None),
-    price: float = Form(...),           # Matches "Enter amount*"
+    price: Optional[str] = Form(None),  # Matches "Enter amount*"
     date: str = Form(...),              # Expected: "dd/mm/yyyy"
     time: str = Form(...),              # Expected: "hh:mm"
     description: str = Form(...),
@@ -718,6 +740,8 @@ async def provider_create_event(
         if linked_activity is None:
             raise HTTPException(status_code=404, detail="Linked activity not found")
 
+    parsed_price = parse_optional_float(price)
+
     # 3. Create Item
     new_event = PlatformItem(
         item_type="event",
@@ -727,7 +751,7 @@ async def provider_create_event(
         lng=lng,
         category_id=category_id,
         linked_activity_id=linked_activity.id if linked_activity else None,
-        price=price,
+        price=parsed_price,
         date=parsed_date,
         start_time=parsed_time,
         description=description,
@@ -786,7 +810,7 @@ async def ai_parse_gift_flyer(
 async def provider_create_gift(
     name: str = Form(..., alias="gift_name"), # UI Label: Gift Name
     category_id: int = Form(...),            # UI Label: Category
-    price: float = Form(...),                 # UI Label: Enter amount*
+    price: Optional[str] = Form(None),        # UI Label: Enter amount*
     description: str = Form(...),             # UI Label: Description
     includes: Optional[str] = Form(None),     # JSON array of included benefits
     tags: str = Form("[]"),                   # UI Label: Tag (multi-select)
@@ -827,12 +851,14 @@ async def provider_create_gift(
         if linked_activity is None:
             raise HTTPException(status_code=404, detail="Linked business/activity not found")
 
+    parsed_price = parse_optional_float(price)
+
     # 3. Create the Gift Item
     new_gift = PlatformItem(
         item_type="gift",
         name=name,
         category_id=category_id,
-        price=price,
+        price=parsed_price,
         description=description,
         includes=parsed_includes,
         tags=parsed_tags,
