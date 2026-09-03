@@ -268,6 +268,32 @@ def resolve_creator_label(user) -> str:
         return user_type.capitalize()
     return "User"
 
+# Occasions list for admin (same as family.DEFAULT_OCCASIONS)
+DEFAULT_OCCASIONS = [
+    {"id": 1, "key": "birthday", "label": "Birthday"},
+    {"id": 2, "key": "new-baby", "label": "New Baby"},
+    {"id": 3, "key": "baptism", "label": "Baptism"},
+    {"id": 4, "key": "baby-shower", "label": "Baby Shower"},
+    {"id": 5, "key": "christmas", "label": "Christmas"},
+    {"id": 6, "key": "mothers-day", "label": "Mother's Day"},
+    {"id": 7, "key": "fathers-day", "label": "Father's Day"},
+    {"id": 8, "key": "just-for-you", "label": "Just for You"},
+    {"id": 9, "key": "other", "label": "Other"},
+]
+
+
+@router.get("/occasions", response_model=APIResponse)
+async def get_occasions_admin(api_request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Return the fixed occasion list for admin UI (same contract as /family/occasions)."""
+    items = [{
+        "id": item["id"],
+        "key": item["key"],
+        "label": item["label"],
+        "image_url": None,
+    } for item in DEFAULT_OCCASIONS]
+
+    return APIResponse(status="success", message="Occasions fetched", data={"items": items})
+
 """
 1. DASHBOARD OVERVIEW (Top Cards + Trends + Donut Chart + Bottom Lists)
 """
