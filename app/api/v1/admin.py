@@ -278,7 +278,7 @@ DEFAULT_OCCASIONS = [
     {"id": 6, "key": "mothers-day", "label": "Mother's Day"},
     {"id": 7, "key": "fathers-day", "label": "Father's Day"},
     {"id": 8, "key": "just-for-you", "label": "Just for You"},
-    {"id": 9, "key": "other", "label": "Other"},
+    # {"id": 9, "key": "other", "label": "Other"},
 ]
 
 
